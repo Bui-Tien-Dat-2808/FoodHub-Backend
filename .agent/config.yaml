@@ -1,0 +1,45 @@
+# config.yaml
+# Cấu hình tham khảo, framework-agnostic. Điền/ánh xạ sang cú pháp thật của
+# LangChain / CrewAI / AutoGen khi tích hợp.
+
+agent:
+  name: coding-agent
+  role: "Coding agent tự chủ hỗ trợ viết/sửa/review code"
+  system_prompt_files:
+    - AGENTS.md
+    - rules/01-coding-standards.md
+    - rules/02-safety-guardrails.md
+    - rules/03-git-conventions.md
+
+model:
+  # điền model thật của bạn, ví dụ claude-sonnet-4-6, gpt-4.1, v.v.
+  provider: "anthropic"
+  model: "claude-sonnet-4-6"
+  temperature: 0.2       # thấp vì coding cần độ chính xác, ít sáng tạo ngẫu nhiên
+  max_tokens: 4096
+
+tools:
+  - name: read_file
+    description: "Đọc nội dung một file trong repo"
+  - name: write_file
+    description: "Tạo/sửa nội dung một file trong repo"
+  - name: run_shell
+    description: "Chạy lệnh shell (test, lint, build) — KHÔNG bao gồm git push/deploy"
+    denylist_commands: ["git push", "rm -rf", "sudo", "curl | sh"]
+  - name: run_tests
+    description: "Chạy test suite của dự án"
+  - name: search_codebase
+    description: "Tìm kiếm text/symbol trong repo"
+
+guardrails:
+  require_human_approval_for:
+    - "git push"
+    - "database migration"
+    - "deploy to production"
+    - "delete file/branch"
+  max_autonomous_steps: 20     # dừng và báo cáo tiến độ sau N bước nếu chưa xong
+  on_ambiguous_request: "chọn phương án hợp lý nhất, nêu rõ giả định, rồi tiếp tục"
+  on_high_risk_action: "dừng lại và hỏi xác nhận người dùng"
+
+skills_dir: ./skills
+workflows_dir: ./workflows

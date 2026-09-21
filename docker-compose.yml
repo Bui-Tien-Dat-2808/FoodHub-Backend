@@ -1,0 +1,63 @@
+﻿services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: foodhub_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: foodhub_user
+      POSTGRES_PASSWORD: foodhub_password
+      POSTGRES_DB: foodhub_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U foodhub_user -d foodhub_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: foodhub_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: foodhub_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      PROJECT_NAME: "FoodHub API"
+      ENVIRONMENT: development
+      DEBUG: "True"
+      POSTGRES_SERVER: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: foodhub_user
+      POSTGRES_PASSWORD: foodhub_password
+      POSTGRES_DB: foodhub_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SECRET_KEY: supersecretkey_change_me_in_production_foodhub_secret_key_12345
+    volumes:
+      - ./app:/code/app
+      - ./tests:/code/tests
+      - ./docs:/code/docs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:

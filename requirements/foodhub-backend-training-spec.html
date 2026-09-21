@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spec dự án training Backend · FoodHub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F3F4F6;
+    --card:#FFFFFF;
+    --ink:#191C24;
+    --ink-2:#464C59;
+    --ink-3:#878E9E;
+    --line:#E3E6EB;
+    --line-2:#EEF0F3;
+    --accent:#4338CA;
+    --accent-2:#4F46E5;
+    --accent-soft:#ECEDFB;
+
+    --db:#1D4ED8;      --db-soft:#E9F0FE;
+    --cache:#C81E1E;   --cache-soft:#FCEBEB;
+    --mq:#B45309;      --mq-soft:#FBF1E2;
+    --ws:#047857;      --ws-soft:#E5F5EE;
+    --sec:#6D28D9;     --sec-soft:#F2EAFD;
+
+    --serif:'Fraunces',Georgia,serif;
+    --sans:'IBM Plex Sans',system-ui,-apple-system,sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,monospace;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:var(--sans);color:var(--ink);background:var(--paper);
+    line-height:1.65;-webkit-font-smoothing:antialiased;
+  }
+  section{scroll-margin-top:84px}
+  a{color:var(--accent);text-decoration:none}
+
+  /* ---------- TOP BAR ---------- */
+  .topbar{
+    position:sticky;top:0;z-index:50;background:rgba(243,244,246,.86);backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line);
+  }
+  .topbar-in{max-width:1160px;margin:0 auto;padding:12px 28px;display:flex;align-items:center;gap:14px}
+  .brand{font-family:var(--mono);font-size:13px;font-weight:500;letter-spacing:.02em;color:var(--ink)}
+  .brand b{color:var(--accent)}
+  .brand .sep{color:var(--ink-3);margin:0 8px}
+  .brand .doc{color:var(--ink-3)}
+  .top-actions{margin-left:auto;display:flex;gap:10px;align-items:center}
+  .btn{
+    font-family:var(--mono);font-size:12px;cursor:pointer;border:1px solid var(--line);background:var(--card);
+    color:var(--ink-2);border-radius:8px;padding:8px 13px;display:inline-flex;gap:7px;align-items:center;transition:all .16s;
+  }
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn svg{width:13px;height:13px}
+
+  /* ---------- HERO ---------- */
+  .hero{max-width:1160px;margin:0 auto;padding:52px 28px 26px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:18px}
+  h1{font-family:var(--serif);font-weight:600;font-size:clamp(34px,5.6vw,56px);line-height:1.04;letter-spacing:-.015em;margin-bottom:14px}
+  h1 .thin{font-style:italic;font-weight:500;color:var(--ink-2)}
+  .summary{font-size:clamp(16px,2.1vw,19px);color:var(--ink-2);max-width:66ch}
+  .meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:26px}
+  .meta .m{background:var(--card);border:1px solid var(--line);border-radius:100px;padding:7px 14px;font-size:13px;color:var(--ink-2)}
+  .meta .m b{color:var(--ink);font-weight:600}
+  .meta .m .lab{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);margin-right:7px}
+
+  .note{
+    max-width:1160px;margin:24px auto 0;padding:0 28px;
+  }
+  .note-in{background:var(--accent-soft);border:1px solid #D7D9F5;border-radius:var(--radius);padding:18px 22px}
+  .note-in .lab{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--accent);margin-bottom:8px}
+  .note-in p{font-size:14px;color:var(--ink-2)}
+  .note-in b{color:var(--ink)}
+
+  /* ---------- LAYOUT ---------- */
+  .layout{max-width:1160px;margin:44px auto 90px;padding:0 28px;display:grid;grid-template-columns:236px 1fr;gap:52px;align-items:start}
+
+  /* TOC */
+  .toc{position:sticky;top:78px;max-height:calc(100vh - 100px);overflow:auto}
+  .toc-title{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--ink-3);margin-bottom:14px;padding-left:14px}
+  .toc a{display:flex;gap:10px;align-items:baseline;padding:7px 14px;font-size:13.5px;color:var(--ink-2);border-left:2px solid transparent;transition:all .15s;line-height:1.4}
+  .toc a:hover{color:var(--ink);background:var(--line-2)}
+  .toc a.active{color:var(--accent);border-left-color:var(--accent);font-weight:600;background:var(--accent-soft)}
+  .toc a .tn{font-family:var(--mono);font-size:11px;color:var(--ink-3);flex:none}
+  .toc a.active .tn{color:var(--accent)}
+
+  /* CONTENT */
+  .content{min-width:0}
+  .sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+  .sec-head .num{font-family:var(--mono);font-size:14px;color:var(--accent);font-weight:500}
+  .sec-head h2{font-family:var(--serif);font-weight:600;font-size:clamp(23px,3.2vw,30px);letter-spacing:-.01em;line-height:1.15}
+  section + section{margin-top:56px}
+  .content p{color:var(--ink-2);margin-bottom:14px;font-size:15.5px}
+  .content p b, li b{color:var(--ink);font-weight:600}
+  .content h3{font-family:var(--sans);font-weight:600;font-size:17px;margin:26px 0 12px;color:var(--ink)}
+
+  ul.clean{list-style:none;display:flex;flex-direction:column;gap:9px;margin:6px 0 14px}
+  ul.clean > li{display:flex;gap:11px;align-items:flex-start;font-size:15px;color:var(--ink-2)}
+  ul.clean > li::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--accent);flex:none;margin-top:9px}
+
+  code{font-family:var(--mono);font-size:.86em;background:var(--line-2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--ink)}
+
+  /* TABLES */
+  .tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;margin:8px 0 16px}
+  table{border-collapse:collapse;width:100%;font-size:14px;min-width:520px}
+  th,td{text-align:left;padding:11px 15px;border-bottom:1px solid var(--line-2);vertical-align:top}
+  thead th{background:#FAFBFC;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-weight:500}
+  tbody tr:last-child td{border-bottom:0}
+  td .m{font-family:var(--mono);font-size:12.5px;color:var(--ink)}
+  td b{color:var(--ink)}
+
+  /* PILLAR CARDS */
+  .pillars{display:flex;flex-direction:column;gap:18px;margin-top:8px}
+  .pillar{border:1px solid var(--line);border-left-width:4px;border-radius:12px;background:var(--card);padding:20px 22px}
+  .pillar-head{display:flex;align-items:center;gap:11px;margin-bottom:6px}
+  .pillar-dot{width:11px;height:11px;border-radius:3px;flex:none}
+  .pillar-name{font-family:var(--sans);font-weight:600;font-size:18px;letter-spacing:-.01em}
+  .pillar-tag{margin-left:auto;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;padding:3px 10px;border-radius:100px}
+  .pillar-why{font-size:14px;color:var(--ink-2);margin-bottom:14px}
+  .pillar-why b{color:var(--ink)}
+  .pillar ul{list-style:none;display:flex;flex-direction:column;gap:8px}
+  .pillar ul li{display:flex;gap:10px;align-items:flex-start;font-size:14.5px;color:var(--ink-2)}
+  .pillar ul li .mk{flex:none;margin-top:2px;font-family:var(--mono);font-weight:600;font-size:13px}
+
+  .pillar.db{border-left-color:var(--db)} .pillar.db .pillar-dot{background:var(--db)} .pillar.db .pillar-tag{background:var(--db-soft);color:var(--db)} .pillar.db .mk{color:var(--db)}
+  .pillar.cache{border-left-color:var(--cache)} .pillar.cache .pillar-dot{background:var(--cache)} .pillar.cache .pillar-tag{background:var(--cache-soft);color:var(--cache)} .pillar.cache .mk{color:var(--cache)}
+  .pillar.mq{border-left-color:var(--mq)} .pillar.mq .pillar-dot{background:var(--mq)} .pillar.mq .pillar-tag{background:var(--mq-soft);color:var(--mq)} .pillar.mq .mk{color:var(--mq)}
+  .pillar.ws{border-left-color:var(--ws)} .pillar.ws .pillar-dot{background:var(--ws)} .pillar.ws .pillar-tag{background:var(--ws-soft);color:var(--ws)} .pillar.ws .mk{color:var(--ws)}
+  .pillar.sec{border-left-color:var(--sec)} .pillar.sec .pillar-dot{background:var(--sec)} .pillar.sec .pillar-tag{background:var(--sec-soft);color:var(--sec)} .pillar.sec .mk{color:var(--sec)}
+
+  /* STATE MACHINE */
+  .flowline{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0 14px}
+  .state{font-family:var(--mono);font-size:12px;background:var(--card);border:1px solid var(--line);border-radius:7px;padding:6px 11px;color:var(--ink)}
+  .state.end{border-color:var(--ws);color:var(--ws);background:var(--ws-soft)}
+  .state.cancel{border-color:var(--cache);color:var(--cache);background:var(--cache-soft)}
+  .arw{color:var(--ink-3);font-family:var(--mono)}
+
+  /* FLOW CARDS */
+  .flow{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:18px 20px;margin-bottom:14px}
+  .flow-h{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .flow-h .fn{font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:500}
+  .flow-h h4{font-family:var(--sans);font-weight:600;font-size:16px}
+  .flow ol{margin:0 0 4px 18px;padding:0}
+  .flow ol li{font-size:14.5px;color:var(--ink-2);margin-bottom:6px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .chip{font-family:var(--mono);font-size:10.5px;padding:3px 9px;border-radius:100px;font-weight:500}
+  .chip.db{background:var(--db-soft);color:var(--db)}
+  .chip.cache{background:var(--cache-soft);color:var(--cache)}
+  .chip.mq{background:var(--mq-soft);color:var(--mq)}
+  .chip.ws{background:var(--ws-soft);color:var(--ws)}
+  .chip.sec{background:var(--sec-soft);color:var(--sec)}
+
+  /* API GROUPS */
+  .api-grp{border:1px solid var(--line);border-radius:12px;margin-bottom:12px;overflow:hidden}
+  .api-grp summary{cursor:pointer;padding:13px 18px;font-family:var(--sans);font-weight:600;font-size:15px;background:#FAFBFC;list-style:none;display:flex;align-items:center;gap:10px}
+  .api-grp summary::-webkit-details-marker{display:none}
+  .api-grp summary::before{content:'+';font-family:var(--mono);color:var(--ink-3);font-size:16px}
+  .api-grp[open] summary::before{content:'–'}
+  .ep{display:flex;gap:12px;align-items:baseline;padding:9px 18px;border-top:1px solid var(--line-2);font-family:var(--mono);font-size:13px}
+  .verb{flex:none;font-weight:600;width:56px;font-size:11px}
+  .verb.get{color:var(--ws)} .verb.post{color:var(--db)} .verb.patch{color:var(--mq)} .verb.del{color:var(--cache)} .verb.ws{color:var(--sec)}
+  .ep .path{color:var(--ink)}
+  .ep .desc{color:var(--ink-3);font-family:var(--sans);font-size:13px;margin-left:auto;text-align:right}
+
+  /* CHECKLIST (DoD) */
+  .dod-grp{margin-bottom:20px}
+  .dod-grp h3{margin-bottom:10px}
+  .checks{list-style:none;display:flex;flex-direction:column;gap:2px}
+  .checks li{display:flex}
+  .checks label{display:flex;gap:11px;align-items:flex-start;font-size:14.5px;color:var(--ink-2);cursor:pointer;padding:7px 10px;border-radius:8px;width:100%;transition:background .12s}
+  .checks label:hover{background:var(--line-2)}
+  .checks input{appearance:none;-webkit-appearance:none;width:17px;height:17px;border:1.5px solid var(--ink-3);border-radius:5px;flex:none;margin-top:2px;cursor:pointer;position:relative;transition:all .15s}
+  .checks input:checked{background:var(--accent);border-color:var(--accent)}
+  .checks input:checked::after{content:'';position:absolute;left:5px;top:1.5px;width:5px;height:9px;border:2px solid #fff;border-top:0;border-left:0;transform:rotate(43deg)}
+  .checks input:checked + span{color:var(--ink-3);text-decoration:line-through}
+  .dod-bar{display:flex;align-items:center;gap:14px;margin:6px 0 22px;padding:12px 16px;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+  .dod-bar .pct{font-family:var(--mono);font-weight:600;font-size:15px;color:var(--accent)}
+  .dod-track{flex:1;height:7px;background:var(--line-2);border-radius:100px;overflow:hidden}
+  .dod-fill{height:100%;width:0;background:var(--accent);border-radius:100px;transition:width .35s}
+  .dod-reset{font-family:var(--mono);font-size:11px;color:var(--ink-3);background:none;border:0;cursor:pointer;text-decoration:underline}
+
+  /* CALLOUT boxes */
+  .box{border:1px solid var(--line);border-radius:12px;padding:16px 20px;margin:8px 0 16px;background:var(--card)}
+  .box.warn{border-color:#F0D48A;background:#FDF8EC}
+  .box .bh{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--mq);margin-bottom:8px}
+  .box p{font-size:14px;margin-bottom:0}
+
+  footer{max-width:1160px;margin:0 auto;padding:30px 28px 60px;border-top:1px solid var(--line);font-family:var(--mono);font-size:12px;color:var(--ink-3);text-align:center}
+
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+
+  @media (max-width:900px){
+    .layout{grid-template-columns:1fr;gap:20px}
+    .toc{position:static;max-height:none;border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--card)}
+    .toc a{border-left:0;border-radius:7px}
+    .toc a.active{border-left:0}
+    .hero,.topbar-in,.note,.layout,footer{padding-left:18px;padding-right:18px}
+    .ep .desc{display:none}
+  }
+
+  @media print{
+    .topbar,.toc,.top-actions,.dod-reset,.note{display:none!important}
+    body{background:#fff}
+    .layout{display:block;margin:0;max-width:none}
+    .content{min-width:0}
+    section{break-inside:avoid}
+    .pillar,.flow,.api-grp,.tbl-wrap,.box{break-inside:avoid}
+    .api-grp[open] summary::before{content:''}
+    a{color:var(--ink)}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-in">
+    <span class="brand"><b>FoodHub</b><span class="sep">/</span><span class="doc">Backend Training Spec</span></span>
+    <div class="top-actions">
+      <button class="btn" id="printBtn" title="In hoặc lưu PDF">
+        <svg viewBox="0 0 16 16" fill="none"><path d="M4 6V2h8v4M4 12H3a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1M4 10h8v4H4z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+        In / PDF
+      </button>
+    </div>
+  </div>
+</div>
+
+<header class="hero">
+  <div class="eyebrow">Dự án training · Backend · Python</div>
+  <h1>FoodHub — Hệ thống <span class="thin">đặt &amp; giao đồ ăn</span></h1>
+  <p class="summary">Đề bài thực tập backend nặng nghiệp vụ: xây API cho một nền tảng giao đồ ăn với vòng đời đơn hàng đầy đủ, xử lý đồng thời an toàn, realtime và tác vụ nền. Mục tiêu là để thực tập sinh chạm thật vào 5 trụ cột: cơ sở dữ liệu nâng cao, Redis, message queue, WebSocket và bảo mật.</p>
+  <div class="meta">
+    <span class="m"><span class="lab">Thời lượng</span><b>6–8 tuần</b></span>
+    <span class="m"><span class="lab">Vai trò</span><b>TTS Backend</b></span>
+    <span class="m"><span class="lab">Độ khó</span><b>Trung bình–Cao</b></span>
+    <span class="m"><span class="lab">Ngôn ngữ</span><b>Python</b></span>
+    <span class="m"><span class="lab">Deliverable</span><b>API + Docker + Docs + Tests</b></span>
+  </div>
+</header>
+
+<div class="note">
+  <div class="note-in">
+    <div class="lab">Ghi chú cho người giao đề</div>
+    <p><b>Miền nghiệp vụ có thể thay được</b> (đặt vé sự kiện, checkout flash-sale, gọi xe) mà giữ nguyên 5 trụ cột kỹ thuật. Điều chỉnh phạm vi theo trình độ TTS: cắt bớt vai trò/tính năng nếu cần, nhưng <b>giữ nguyên luồng tạo đơn đồng thời không oversell</b> — đó là bài học đắt giá nhất và là trọng tâm chấm điểm.</p>
+  </div>
+</div>
+
+<div class="layout">
+
+  <!-- TOC -->
+  <nav class="toc" id="toc">
+    <div class="toc-title">Mục lục</div>
+    <a href="#s1"><span class="tn">01</span> Tổng quan &amp; mục tiêu</a>
+    <a href="#s2"><span class="tn">02</span> Nghiệp vụ &amp; vai trò</a>
+    <a href="#s3"><span class="tn">03</span> Mô hình dữ liệu</a>
+    <a href="#s4"><span class="tn">04</span> Vòng đời đơn hàng</a>
+    <a href="#s5"><span class="tn">05</span> Luồng nghiệp vụ chính</a>
+    <a href="#s6"><span class="tn">06</span> Yêu cầu 5 trụ cột</a>
+    <a href="#s7"><span class="tn">07</span> API</a>
+    <a href="#s8"><span class="tn">08</span> Yêu cầu phi chức năng</a>
+    <a href="#s9"><span class="tn">09</span> Lộ trình &amp; milestone</a>
+    <a href="#s10"><span class="tn">10</span> Tiêu chí nghiệm thu</a>
+    <a href="#s11"><span class="tn">11</span> Thang chấm điểm</a>
+    <a href="#s12"><span class="tn">12</span> Stack &amp; bàn giao</a>
+    <a href="#s13"><span class="tn">13</span> Mở rộng</a>
+  </nav>
+
+  <main class="content">
+
+    <!-- 01 -->
+    <section id="s1">
+      <div class="sec-head"><span class="num">01</span><h2>Tổng quan &amp; mục tiêu học</h2></div>
+      <p>TTS xây dựng backend cho <b>FoodHub</b> — nền tảng đặt và giao đồ ăn. Đây không phải bài CRUD đơn thuần: trọng tâm là <b>logic nghiệp vụ</b> (vòng đời đơn, giá, khuyến mãi, gán tài xế) và <b>tính đúng đắn dưới tải đồng thời</b>. Sản phẩm cuối là một API chạy được bằng Docker, có test, tài liệu và một bản mô tả kiến trúc.</p>
+      <h3>Mục tiêu học theo từng trụ cột</h3>
+      <ul class="clean">
+        <li><b>Database nâng cao:</b> hiểu transaction, kiểm soát đồng thời (khóa lạc quan/bi quan), thiết kế index, viết truy vấn báo cáo và tránh N+1.</li>
+        <li><b>Redis:</b> cache đúng cách (TTL + invalidation), idempotency, rate limiting, distributed lock, lưu dữ liệu tạm thời.</li>
+        <li><b>Message Queue:</b> tách tác vụ nặng ra khỏi request, tác vụ trễ (delayed), retry an toàn, tác vụ định kỳ.</li>
+        <li><b>WebSocket:</b> realtime có xác thực, scale nhiều process bằng backplane.</li>
+        <li><b>Auth &amp; Security:</b> JWT, RBAC, kiểm tra quyền sở hữu, checklist OWASP.</li>
+      </ul>
+      <div class="box warn">
+        <div class="bh">Tiêu chí "đạt"</div>
+        <p>Dự án được coi là thành công khi: (1) không thể oversell voucher/tồn kho dù gọi song song; (2) đơn chưa thanh toán tự hủy đúng hạn qua tác vụ nền; (3) khách theo dõi được trạng thái đơn realtime; (4) mọi endpoint đều đúng phân quyền. Bốn điểm này quan trọng hơn số lượng tính năng.</p>
+      </div>
+    </section>
+
+    <!-- 02 -->
+    <section id="s2">
+      <div class="sec-head"><span class="num">02</span><h2>Bối cảnh nghiệp vụ &amp; vai trò</h2></div>
+      <p>Hệ thống có 4 vai trò, mỗi vai trò có quyền và luồng riêng. Việc phân tách quyền rõ ràng chính là phần bảo mật (RBAC) cần được kiểm chứng.</p>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Vai trò</th><th>Làm được gì</th><th>Ràng buộc quyền</th></tr></thead>
+          <tbody>
+            <tr><td><b>Khách hàng</b></td><td>Duyệt quán/menu, đặt đơn, áp voucher, theo dõi &amp; hủy đơn, đánh giá</td><td>Chỉ thao tác trên đơn của chính mình</td></tr>
+            <tr><td><b>Chủ quán</b></td><td>Quản lý menu &amp; tồn kho, xác nhận/từ chối đơn, cập nhật trạng thái chuẩn bị, xem báo cáo quán</td><td>Chỉ quản lý quán &amp; đơn thuộc quán mình</td></tr>
+            <tr><td><b>Tài xế</b></td><td>Bật/tắt sẵn sàng, nhận đơn được gán, cập nhật vị trí &amp; trạng thái giao</td><td>Chỉ thao tác trên đơn được gán cho mình</td></tr>
+            <tr><td><b>Admin</b></td><td>Quản lý người dùng/quán, xem toàn bộ đơn &amp; báo cáo tổng, xử lý hoàn tiền</td><td>Toàn quyền, có audit log cho thao tác nhạy cảm</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>Quy tắc nghiệp vụ cốt lõi</h3>
+      <ul class="clean">
+        <li>Một đơn chỉ chứa món từ <b>một quán</b>. Giá món được <b>chốt tại thời điểm đặt</b> (snapshot), không đổi theo giá menu sau này.</li>
+        <li>Voucher có <b>hạn dùng</b>, <b>giới hạn tổng lượt</b> và <b>giới hạn mỗi người</b>; loại giảm theo % (có trần) hoặc số tiền cố định.</li>
+        <li>Tổng đơn = tạm tính − giảm giá + phí giao + thuế/phí dịch vụ. Công thức phải kiểm thử được.</li>
+        <li>Chuyển trạng thái đơn phải theo đúng máy trạng thái (mục 04) và đúng vai trò được phép.</li>
+        <li>Tồn kho món (nếu bật giới hạn) không được âm; hủy đơn phải hoàn kho &amp; hoàn lượt voucher.</li>
+      </ul>
+    </section>
+
+    <!-- 03 -->
+    <section id="s3">
+      <div class="sec-head"><span class="num">03</span><h2>Mô hình dữ liệu</h2></div>
+      <p>Thiết kế chuẩn hóa, có khóa ngoại và ràng buộc. Các cột in đậm là điểm cần chú ý (khóa đồng thời, snapshot, idempotency).</p>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Thực thể</th><th>Trường chính</th><th>Quan hệ / ghi chú</th></tr></thead>
+          <tbody>
+            <tr><td class="m">User</td><td>id, email (unique), hashed_password, role, is_active, created_at</td><td>Gốc cho mọi vai trò</td></tr>
+            <tr><td class="m">Merchant</td><td>id, owner_id, name, address, is_open</td><td>Thuộc 1 user (chủ quán)</td></tr>
+            <tr><td class="m">MenuItem</td><td>id, merchant_id, name, price, <b>stock</b>, is_available</td><td>Thuộc quán; stock dùng cho concurrency</td></tr>
+            <tr><td class="m">Voucher</td><td>code (unique), type, value, max_uses, <b>used_count</b>, per_user_limit, starts_at, ends_at</td><td>used_count là điểm tranh chấp đồng thời</td></tr>
+            <tr><td class="m">Order</td><td>id, customer_id, merchant_id, status, subtotal, discount, fee, total, <b>version</b>, idempotency_key, created_at</td><td>version cho khóa lạc quan</td></tr>
+            <tr><td class="m">OrderItem</td><td>id, order_id, menu_item_id, <b>name_snapshot</b>, <b>price_snapshot</b>, qty</td><td>Chốt giá &amp; tên tại thời điểm đặt</td></tr>
+            <tr><td class="m">DriverProfile</td><td>user_id, status (offline/available/busy), rating</td><td>1-1 với user tài xế</td></tr>
+            <tr><td class="m">Delivery</td><td>id, order_id, driver_id, status, assigned_at, delivered_at</td><td>Nối đơn ↔ tài xế</td></tr>
+            <tr><td class="m">Payment</td><td>id, order_id, amount, method, status, <b>idempotency_key</b></td><td>Chống thanh toán trùng</td></tr>
+            <tr><td class="m">Notification</td><td>id, user_id, type, payload, is_read, created_at</td><td>Sinh bởi worker (MQ)</td></tr>
+            <tr><td class="m">AuditLog</td><td>id, actor_id, action, entity, before, after, created_at</td><td>Cho thao tác nhạy cảm (stretch)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Yêu cầu: có <b>migration</b> (Alembic), có <b>index</b> hợp lý (khóa ngoại, <code>order(status, created_at)</code>, <code>voucher.code</code>), và ràng buộc DB (unique, check <code>total &gt;= 0</code>).</p>
+    </section>
+
+    <!-- 04 -->
+    <section id="s4">
+      <div class="sec-head"><span class="num">04</span><h2>Vòng đời đơn hàng (state machine)</h2></div>
+      <p>Đây là "xương sống nghiệp vụ". TTS phải hiện thực máy trạng thái tường minh: mỗi chuyển tiếp chỉ hợp lệ với đúng trạng thái nguồn và đúng vai trò.</p>
+      <div class="flowline">
+        <span class="state">PENDING_PAYMENT</span><span class="arw">→</span>
+        <span class="state">CONFIRMED</span><span class="arw">→</span>
+        <span class="state">PREPARING</span><span class="arw">→</span>
+        <span class="state">READY</span><span class="arw">→</span>
+        <span class="state">PICKED_UP</span><span class="arw">→</span>
+        <span class="state">DELIVERING</span><span class="arw">→</span>
+        <span class="state end">DELIVERED</span>
+      </div>
+      <div class="flowline">
+        <span class="arw">nhánh khác:</span>
+        <span class="state cancel">CANCELLED</span>
+        <span class="state cancel">REFUNDED</span>
+      </div>
+      <ul class="clean">
+        <li><code>PENDING_PAYMENT → CONFIRMED</code>: khi thanh toán thành công (hoặc chọn COD thì tự xác nhận).</li>
+        <li><code>PENDING_PAYMENT → CANCELLED</code>: tự động sau <b>15 phút</b> chưa thanh toán (tác vụ nền), hoặc khách chủ động hủy.</li>
+        <li><code>CONFIRMED/PREPARING</code>: chỉ <b>chủ quán</b> được đẩy tiếp; <code>READY → PICKED_UP</code> do <b>tài xế</b>.</li>
+        <li>Hủy sau khi CONFIRMED cần lý do &amp; xử lý hoàn tiền/hoàn kho/hoàn voucher.</li>
+        <li>Chuyển tiếp sai (VD nhảy thẳng PENDING → DELIVERED) phải bị từ chối với lỗi rõ ràng.</li>
+      </ul>
+      <div class="box">
+        <div class="bh" style="color:var(--sec)">Yêu cầu kiểm thử</div>
+        <p>Bắt buộc có test cho máy trạng thái: liệt kê các chuyển tiếp hợp lệ/không hợp lệ và khẳng định hệ thống chặn đúng.</p>
+      </div>
+    </section>
+
+    <!-- 05 -->
+    <section id="s5">
+      <div class="sec-head"><span class="num">05</span><h2>Luồng nghiệp vụ chính</h2></div>
+      <p>Bốn luồng dưới đây là nơi 5 trụ cột kỹ thuật hội tụ. Chip màu cho biết luồng chạm vào trụ cột nào.</p>
+
+      <div class="flow">
+        <div class="flow-h"><span class="fn">FLOW A</span><h4>Đặt đơn — luồng quan trọng nhất</h4></div>
+        <ol>
+          <li>Nhận request kèm <code>Idempotency-Key</code>; nếu key đã xử lý → trả kết quả cũ, không tạo đơn mới.</li>
+          <li>Kiểm tra rate limit của khách (VD tối đa 5 đơn/phút).</li>
+          <li>Validate món cùng một quán &amp; còn bán; tính tạm tính từ giá hiện tại (snapshot vào OrderItem).</li>
+          <li>Áp voucher: kiểm tra hạn, tổng lượt, lượt/người — <b>tăng used_count an toàn dưới đồng thời</b>.</li>
+          <li>Trừ tồn kho món <b>không cho âm</b>.</li>
+          <li>Ghi Order + OrderItem trong <b>một transaction</b> (tất cả hoặc không gì cả).</li>
+          <li>Đẩy hàng đợi: hẹn giờ auto-hủy nếu chưa thanh toán, thông báo cho quán, push realtime vào dashboard quán.</li>
+        </ol>
+        <div class="chips"><span class="chip db">DB · transaction + khóa</span><span class="chip cache">Redis · idempotency + rate limit + lock</span><span class="chip mq">MQ · delayed auto-cancel</span><span class="chip ws">WS · báo quán</span></div>
+      </div>
+
+      <div class="flow">
+        <div class="flow-h"><span class="fn">FLOW B</span><h4>Thanh toán &amp; tự động hủy</h4></div>
+        <ol>
+          <li>Khách thanh toán (cổng thanh toán <b>mock</b>) — có <code>idempotency_key</code> chống trừ tiền trùng.</li>
+          <li>Thành công → <code>CONFIRMED</code>, push realtime cho khách, gửi thông báo.</li>
+          <li>Nếu quá 15 phút chưa thanh toán → tác vụ trễ tự <b>hủy đơn, hoàn kho, hoàn lượt voucher</b> (idempotent, chạy lại không sai).</li>
+        </ol>
+        <div class="chips"><span class="chip cache">Redis · idempotency</span><span class="chip mq">MQ · delayed + retry</span><span class="chip ws">WS · báo khách</span><span class="chip db">DB · transaction hoàn tác</span></div>
+      </div>
+
+      <div class="flow">
+        <div class="flow-h"><span class="fn">FLOW C</span><h4>Gán tài xế &amp; giao hàng</h4></div>
+        <ol>
+          <li>Đơn <code>READY</code> → worker tìm tài xế đang <b>available</b> và gán; hai đơn không được giành cùng một tài xế (<b>lock/atomic</b>).</li>
+          <li>Tài xế nhận đơn → chuyển <code>PICKED_UP → DELIVERING</code>.</li>
+          <li>Tài xế gửi vị trí định kỳ → lưu Redis (TTL) → đẩy realtime cho khách theo dõi bản đồ.</li>
+          <li>Giao xong → <code>DELIVERED</code>; đẩy tác vụ nền tạo bút toán đối soát + gửi biên nhận + mời đánh giá.</li>
+        </ol>
+        <div class="chips"><span class="chip cache">Redis · lock + vị trí(TTL)</span><span class="chip mq">MQ · matching + đối soát</span><span class="chip ws">WS · tracking realtime</span></div>
+      </div>
+
+      <div class="flow">
+        <div class="flow-h"><span class="fn">FLOW D</span><h4>Báo cáo &amp; thống kê</h4></div>
+        <ol>
+          <li>Quán/Admin xem doanh thu theo ngày, top món bán chạy, phễu trạng thái đơn.</li>
+          <li>Truy vấn tổng hợp (aggregation + join) trên DB, có index phù hợp.</li>
+          <li>Kết quả đọc nặng được <b>cache</b> với TTL và bị <b>invalidation</b> khi có đơn mới liên quan.</li>
+        </ol>
+        <div class="chips"><span class="chip db">DB · aggregation + index</span><span class="chip cache">Redis · cache báo cáo</span><span class="chip sec">Security · RBAC theo phạm vi</span></div>
+      </div>
+    </section>
+
+    <!-- 06 -->
+    <section id="s6">
+      <div class="sec-head"><span class="num">06</span><h2>Yêu cầu kỹ thuật theo 5 trụ cột</h2></div>
+      <p>Đây là phần bắt buộc. Mỗi mục là một yêu cầu "MUST" — TTS phải làm và giải thích được lựa chọn của mình trong tài liệu kiến trúc.</p>
+
+      <div class="pillars">
+
+        <div class="pillar db">
+          <div class="pillar-head"><span class="pillar-dot"></span><span class="pillar-name">Database nâng cao</span><span class="pillar-tag">PostgreSQL</span></div>
+          <p class="pillar-why"><b>Vì sao:</b> đây là nơi dữ liệu phải đúng tuyệt đối kể cả khi nhiều người thao tác cùng lúc.</p>
+          <ul>
+            <li><span class="mk">▹</span>Ghi đơn bằng <b>transaction</b> đa bảng (Order + OrderItem + trừ kho + voucher) — nguyên tử.</li>
+            <li><span class="mk">▹</span><b>Kiểm soát đồng thời:</b> chống oversell tồn kho &amp; voucher bằng <b>khóa lạc quan</b> (cột <code>version</code>) hoặc <b>bi quan</b> (<code>SELECT ... FOR UPDATE</code>). Ghi rõ đã chọn cách nào &amp; vì sao.</li>
+            <li><span class="mk">▹</span><b>Index</b> cho khóa ngoại &amp; truy vấn nóng; nộp kèm <code>EXPLAIN ANALYZE</code> của 1 truy vấn trước/sau khi thêm index.</li>
+            <li><span class="mk">▹</span>Tránh <b>N+1</b> khi liệt kê đơn kèm item (eager loading).</li>
+            <li><span class="mk">▹</span><b>Migration</b> (Alembic) + ràng buộc DB (unique, check, foreign key có <code>ON DELETE</code>).</li>
+            <li><span class="mk">▹</span>Một truy vấn <b>báo cáo</b> tổng hợp (doanh thu theo quán theo ngày).</li>
+          </ul>
+        </div>
+
+        <div class="pillar cache">
+          <div class="pillar-head"><span class="pillar-dot"></span><span class="pillar-name">Redis Caching</span><span class="pillar-tag">Redis</span></div>
+          <p class="pillar-why"><b>Vì sao:</b> tăng tốc đọc nóng và giải các bài toán phân tán (idempotency, lock, đếm).</p>
+          <ul>
+            <li><span class="mk">▹</span><b>Cache-aside</b> cho menu/chi tiết quán: TTL + <b>invalidation tường minh</b> khi cập nhật.</li>
+            <li><span class="mk">▹</span><b>Idempotency key</b> cho tạo đơn &amp; thanh toán (chống trùng khi client gửi lại).</li>
+            <li><span class="mk">▹</span><b>Rate limiting</b> (fixed/sliding window) cho tạo đơn &amp; đăng nhập.</li>
+            <li><span class="mk">▹</span><b>Distributed lock</b> cho áp voucher / gán tài xế (hoặc giải thích vì sao dùng khóa lạc quan DB thay thế).</li>
+            <li><span class="mk">▹</span>Lưu <b>vị trí tài xế mới nhất</b> (ephemeral, có TTL) &amp; counter (VD số đơn trong ngày).</li>
+            <li><span class="mk">▹</span>Viết rõ <b>chiến lược invalidation</b> trong tài liệu.</li>
+          </ul>
+        </div>
+
+        <div class="pillar mq">
+          <div class="pillar-head"><span class="pillar-dot"></span><span class="pillar-name">Message Queue</span><span class="pillar-tag">Celery + Broker</span></div>
+          <p class="pillar-why"><b>Vì sao:</b> tách việc nặng/chậm khỏi request và xử lý việc theo lịch.</p>
+          <ul>
+            <li><span class="mk">▹</span>Tác vụ bất đồng bộ: gửi thông báo (email/SMS <b>mock</b>), tạo/làm mới báo cáo, ghi đối soát.</li>
+            <li><span class="mk">▹</span><b>Tác vụ trễ:</b> auto-hủy đơn chưa thanh toán sau 15 phút (countdown/eta).</li>
+            <li><span class="mk">▹</span><b>Retry có backoff</b> cho tác vụ dễ lỗi (VD cổng thanh toán mock chập chờn).</li>
+            <li><span class="mk">▹</span>Tác vụ <b>idempotent</b> — chạy lại nhiều lần không gây sai lệch dữ liệu.</li>
+            <li><span class="mk">▹</span>Tác vụ <b>định kỳ</b> (Celery beat): đối soát cuối ngày / dọn khóa hết hạn.</li>
+          </ul>
+        </div>
+
+        <div class="pillar ws">
+          <div class="pillar-head"><span class="pillar-dot"></span><span class="pillar-name">WebSocket</span><span class="pillar-tag">Realtime</span></div>
+          <p class="pillar-why"><b>Vì sao:</b> đẩy cập nhật tức thì và học cách realtime hoạt động khi có nhiều process.</p>
+          <ul>
+            <li><span class="mk">▹</span>Kết nối WS <b>có xác thực</b> (gửi token khi connect; từ chối nếu sai).</li>
+            <li><span class="mk">▹</span>Kênh: trạng thái đơn + vị trí tài xế cho <b>khách</b>; feed đơn mới cho <b>quán</b>.</li>
+            <li><span class="mk">▹</span>Dùng <b>Redis pub/sub làm backplane</b> để sự kiện tới đúng client dù chạy nhiều worker.</li>
+            <li><span class="mk">▹</span>Xử lý connect/disconnect gọn gàng; chỉ gửi sự kiện cho <b>đúng người có quyền</b>.</li>
+          </ul>
+        </div>
+
+        <div class="pillar sec">
+          <div class="pillar-head"><span class="pillar-dot"></span><span class="pillar-name">Authentication &amp; Security</span><span class="pillar-tag">JWT + RBAC</span></div>
+          <p class="pillar-why"><b>Vì sao:</b> dữ liệu nhạy cảm (đơn, tiền) đòi hỏi phân quyền chặt và phòng thủ cơ bản.</p>
+          <ul>
+            <li><span class="mk">▹</span>JWT <b>access + refresh</b>; hash mật khẩu bằng bcrypt/argon2.</li>
+            <li><span class="mk">▹</span><b>RBAC</b> với ma trận quyền rõ ràng + <b>kiểm tra quyền sở hữu</b> (quán chỉ sửa menu của mình, khách chỉ xem đơn của mình).</li>
+            <li><span class="mk">▹</span>Validate input (Pydantic), schema output không lộ hash/nội bộ.</li>
+            <li><span class="mk">▹</span><b>OWASP:</b> chống SQLi (ORM/param), rate limit chống brute-force, CORS, không để secret trong code (.env), idempotency chống trừ tiền trùng.</li>
+            <li><span class="mk">▹</span>WebSocket phải xác thực; <b>audit log</b> cho thao tác nhạy cảm (đổi trạng thái, hoàn tiền) — khuyến khích.</li>
+          </ul>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- 07 -->
+    <section id="s7">
+      <div class="sec-head"><span class="num">07</span><h2>Bề mặt API (tham khảo)</h2></div>
+      <p>Danh sách định hướng — TTS có thể tinh chỉnh tên/đường dẫn nhưng phải bám đúng nghiệp vụ &amp; phân quyền. Bấm để mở từng nhóm.</p>
+
+      <details class="api-grp" open>
+        <summary>Auth</summary>
+        <div class="ep"><span class="verb post">POST</span><span class="path">/api/v1/auth/register</span><span class="desc">Đăng ký</span></div>
+        <div class="ep"><span class="verb post">POST</span><span class="path">/api/v1/auth/login</span><span class="desc">Access + refresh token</span></div>
+        <div class="ep"><span class="verb post">POST</span><span class="path">/api/v1/auth/refresh</span><span class="desc">Làm mới token</span></div>
+        <div class="ep"><span class="verb get">GET</span><span class="path">/api/v1/auth/me</span><span class="desc">Thông tin tôi</span></div>
+      </details>
+
+      <details class="api-grp">
+        <summary>Merchant &amp; Menu</summary>
+        <div class="ep"><span class="verb get">GET</span><span class="path">/api/v1/merchants</span><span class="desc">Danh sách quán (cache)</span></div>
+        <div class="ep"><span class="verb get">GET</span><span class="path">/api/v1/merchants/{id}/menu</span><span class="desc">Menu quán (cache)</span></div>
+        <div class="ep"><span class="verb post">POST</span><span class="path">/api/v1/merchant/menu-items</span><span class="desc">Quán: thêm món</span></div>
+        <div class="ep"><span class="verb patch">PATCH</span><span class="path">/api/v1/merchant/menu-items/{id}</span><span class="desc">Quán: sửa món/tồn kho</span></div>
+      </details>
+
+      <details class="api-grp">
+        <summary>Orders</summary>
+        <div class="ep"><span class="verb post">POST</span><span class="path">/api/v1/orders</span><span class="desc">Đặt đơn (Idempotency-Key)</span></div>
+        <div class="ep"><span class="verb get">GET</span><span class="path">/api/v1/orders</span><span class="desc">Đơn của tôi (phân trang, lọc)</span></div>
+        <div class="ep"><span class="verb get">GET</span><span class="path">/api/v1/orders/{id}</span><span class="desc">Chi tiết đơn</span></div>
+        <div class="ep"><span class="verb post">POST</span><span class="path">/api/v1/orders/{id}/pay</span><span class="desc">Thanh toán (mock)</span></div>
+        <div class="ep"><span class="verb post">POST</span><span class="path">/api/v1/orders/{id}/cancel</span><span class="desc">Hủy đơn (có lý do)</span></div>
+        <div class="ep"><span class="verb patch">PATCH</span><span class="path">/api/v1/orders/{id}/status</span><span class="desc">Quán/Tài xế đổi trạng thái</span></div>
+      </details>
+
+      <details class="api-grp">
+        <summary>Driver</summary>
+        <div class="ep"><span class="verb patch">PATCH</span><span class="path">/api/v1/driver/status</span><span class="desc">Bật/tắt sẵn sàng</span></div>
+        <div class="ep"><span class="verb post">POST</span><span class="path">/api/v1/driver/deliveries/{id}/accept</span><span class="desc">Nhận đơn được gán</span></div>
+        <div class="ep"><span class="verb post">POST</span><span class="path">/api/v1/driver/location</span><span class="desc">Cập nhật vị trí (→ Redis)</span></div>
+      </details>
+
+      <details class="api-grp">
+        <summary>Admin &amp; Reports</summary>
+        <div class="ep"><span class="verb get">GET</span><span class="path">/api/v1/admin/orders</span><span class="desc">Toàn bộ đơn</span></div>
+        <div class="ep"><span class="verb post">POST</span><span class="path">/api/v1/admin/orders/{id}/refund</span><span class="desc">Hoàn tiền (audit)</span></div>
+        <div class="ep"><span class="verb get">GET</span><span class="path">/api/v1/reports/revenue</span><span class="desc">Doanh thu (aggregation, cache)</span></div>
+      </details>
+
+      <details class="api-grp">
+        <summary>WebSocket</summary>
+        <div class="ep"><span class="verb ws">WS</span><span class="path">/ws/orders/{id}</span><span class="desc">Khách: trạng thái + vị trí tài xế</span></div>
+        <div class="ep"><span class="verb ws">WS</span><span class="path">/ws/merchant/feed</span><span class="desc">Quán: đơn mới realtime</span></div>
+      </details>
+    </section>
+
+    <!-- 08 -->
+    <section id="s8">
+      <div class="sec-head"><span class="num">08</span><h2>Yêu cầu phi chức năng</h2></div>
+      <ul class="clean">
+        <li><b>Kiểm thử:</b> unit + integration; <b>bắt buộc</b> có (1) test concurrency chứng minh không oversell, (2) test RBAC/quyền sở hữu, (3) test máy trạng thái đơn. Coverage phần nghiệp vụ lõi ≥ <b>70%</b>.</li>
+        <li><b>Xử lý lỗi:</b> envelope lỗi nhất quán, đúng mã HTTP (400/401/403/404/409/422/429/500).</li>
+        <li><b>Logging:</b> log có cấu trúc cho các sự kiện quan trọng (tạo đơn, đổi trạng thái, tác vụ nền, lỗi).</li>
+        <li><b>Docker:</b> <code>docker compose up</code> chạy đủ: api, worker, beat, postgres, redis, broker.</li>
+        <li><b>Tài liệu:</b> OpenAPI tự sinh + <code>README</code> (chạy 1 lệnh) + <code>ARCHITECTURE.md</code> giải thích lựa chọn concurrency/cache/MQ.</li>
+        <li><b>Chất lượng code:</b> lint (ruff), cấu trúc phân tầng rõ ràng, không hard-code secret.</li>
+      </ul>
+    </section>
+
+    <!-- 09 -->
+    <section id="s9">
+      <div class="sec-head"><span class="num">09</span><h2>Lộ trình &amp; milestone (6–8 tuần)</h2></div>
+      <p>Chia nhỏ để dễ theo dõi &amp; review từng tuần. Mỗi tuần nên có một buổi review code với mentor.</p>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Tuần</th><th>Trọng tâm</th><th>Deliverable</th></tr></thead>
+          <tbody>
+            <tr><td><b>1</b></td><td>Setup, Auth (JWT + RBAC), CRUD user/merchant/menu, Docker skeleton, CI</td><td>API nền chạy được, có test auth</td></tr>
+            <tr><td><b>2</b></td><td>Domain đơn hàng + máy trạng thái + tạo đơn trong transaction (chưa lo đồng thời), liệt kê đơn không N+1</td><td>Đặt/xem đơn cơ bản + test state machine</td></tr>
+            <tr><td><b>3</b></td><td>Concurrency (chống oversell voucher/kho) + test song song; Redis cache menu + invalidation; rate limit; idempotency</td><td>Test concurrency đạt + cache hoạt động</td></tr>
+            <tr><td><b>4</b></td><td>Message Queue: thông báo, auto-hủy (delayed), retry, beat định kỳ, đối soát</td><td>Worker + beat chạy; auto-hủy đúng hạn</td></tr>
+            <tr><td><b>5</b></td><td>WebSocket: trạng thái đơn + feed quán + vị trí tài xế qua Redis pub/sub; WS có xác thực</td><td>Realtime chạy đa process</td></tr>
+            <tr><td><b>6</b></td><td>Báo cáo + cache; siết bảo mật (OWASP checklist); audit log; hoàn thiện docs; test tải/đồng thời; review cuối</td><td>Bản hoàn chỉnh + ARCHITECTURE.md</td></tr>
+            <tr><td><b>7–8</b></td><td>Buffer &amp; stretch goals (mục 13)</td><td>Tùy chọn nâng cao</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 10 -->
+    <section id="s10">
+      <div class="sec-head"><span class="num">10</span><h2>Tiêu chí nghiệm thu (Definition of Done)</h2></div>
+      <p>Tick khi review — trạng thái được lưu lại trên máy bạn. Đây cũng là bảng đối chiếu khi nghiệm thu.</p>
+      <div class="dod-bar">
+        <span class="pct" id="dodPct">0%</span>
+        <div class="dod-track"><div class="dod-fill" id="dodFill"></div></div>
+        <button class="dod-reset" id="dodReset">đặt lại</button>
+      </div>
+
+      <div class="dod-grp">
+        <h3>Nghiệp vụ &amp; dữ liệu</h3>
+        <ul class="checks">
+          <li><label><input type="checkbox"><span>Máy trạng thái đơn hoạt động đúng, chặn chuyển tiếp sai</span></label></li>
+          <li><label><input type="checkbox"><span>Tạo đơn nguyên tử trong transaction; giá món được snapshot</span></label></li>
+          <li><label><input type="checkbox"><span>Công thức tổng tiền (giảm giá, phí, thuế) đúng &amp; có test</span></label></li>
+          <li><label><input type="checkbox"><span>Hủy đơn hoàn kho &amp; hoàn lượt voucher chính xác</span></label></li>
+        </ul>
+      </div>
+
+      <div class="dod-grp">
+        <h3>Concurrency &amp; Database</h3>
+        <ul class="checks">
+          <li><label><input type="checkbox"><span>Không oversell tồn kho/voucher khi gọi song song (có test chứng minh)</span></label></li>
+          <li><label><input type="checkbox"><span>Có migration; index hợp lý; kèm EXPLAIN trước/sau</span></label></li>
+          <li><label><input type="checkbox"><span>Không dính N+1 khi liệt kê đơn</span></label></li>
+        </ul>
+      </div>
+
+      <div class="dod-grp">
+        <h3>Redis</h3>
+        <ul class="checks">
+          <li><label><input type="checkbox"><span>Cache menu/quán có TTL + invalidation khi cập nhật</span></label></li>
+          <li><label><input type="checkbox"><span>Idempotency chặn tạo đơn/thanh toán trùng</span></label></li>
+          <li><label><input type="checkbox"><span>Rate limiting hoạt động cho tạo đơn &amp; đăng nhập</span></label></li>
+          <li><label><input type="checkbox"><span>Lock (hoặc khóa lạc quan) cho voucher/gán tài xế, có giải thích</span></label></li>
+        </ul>
+      </div>
+
+      <div class="dod-grp">
+        <h3>Message Queue</h3>
+        <ul class="checks">
+          <li><label><input type="checkbox"><span>Auto-hủy đơn chưa thanh toán đúng hạn (delayed task)</span></label></li>
+          <li><label><input type="checkbox"><span>Có retry backoff &amp; tác vụ idempotent</span></label></li>
+          <li><label><input type="checkbox"><span>Có tác vụ định kỳ (beat) chạy được</span></label></li>
+        </ul>
+      </div>
+
+      <div class="dod-grp">
+        <h3>WebSocket</h3>
+        <ul class="checks">
+          <li><label><input type="checkbox"><span>WS xác thực; chỉ gửi sự kiện cho đúng người có quyền</span></label></li>
+          <li><label><input type="checkbox"><span>Realtime hoạt động qua Redis pub/sub (đa process)</span></label></li>
+        </ul>
+      </div>
+
+      <div class="dod-grp">
+        <h3>Bảo mật &amp; bàn giao</h3>
+        <ul class="checks">
+          <li><label><input type="checkbox"><span>RBAC + kiểm tra quyền sở hữu đúng trên mọi endpoint</span></label></li>
+          <li><label><input type="checkbox"><span>Đạt checklist OWASP cơ bản; không secret trong code</span></label></li>
+          <li><label><input type="checkbox"><span>docker compose up chạy đủ dịch vụ</span></label></li>
+          <li><label><input type="checkbox"><span>README + ARCHITECTURE.md + OpenAPI đầy đủ</span></label></li>
+          <li><label><input type="checkbox"><span>Coverage nghiệp vụ lõi ≥ 70%; CI xanh</span></label></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 11 -->
+    <section id="s11">
+      <div class="sec-head"><span class="num">11</span><h2>Thang chấm điểm</h2></div>
+      <p>Trọng số phản ánh trọng tâm học: đúng đắn nghiệp vụ + concurrency chiếm phần lớn nhất.</p>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Tiêu chí</th><th>Trọng số</th><th>"Đạt tốt" nghĩa là</th></tr></thead>
+          <tbody>
+            <tr><td><b>Nghiệp vụ &amp; máy trạng thái</b></td><td class="m">20%</td><td>Logic đúng, chặn chuyển tiếp sai, công thức giá chuẩn</td></tr>
+            <tr><td><b>Concurrency &amp; DB</b></td><td class="m">20%</td><td>Không oversell dưới tải, có test song song, index/transaction hợp lý</td></tr>
+            <tr><td><b>Redis</b></td><td class="m">12%</td><td>Cache + invalidation đúng, idempotency &amp; rate limit hoạt động</td></tr>
+            <tr><td><b>Message Queue</b></td><td class="m">12%</td><td>Delayed + retry + idempotent + beat</td></tr>
+            <tr><td><b>WebSocket</b></td><td class="m">10%</td><td>Realtime có xác thực, backplane đa process</td></tr>
+            <tr><td><b>Bảo mật</b></td><td class="m">12%</td><td>RBAC + ownership + OWASP cơ bản</td></tr>
+            <tr><td><b>Kiểm thử</b></td><td class="m">8%</td><td>Coverage &amp; các test bắt buộc đầy đủ</td></tr>
+            <tr><td><b>Code &amp; tài liệu</b></td><td class="m">6%</td><td>Cấu trúc rõ, ARCHITECTURE.md giải thích được lựa chọn</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="box">
+        <div class="bh" style="color:var(--accent)">Gợi ý phỏng vấn/đánh giá</div>
+        <p>Yêu cầu TTS <b>giải thích miệng</b> vì sao chọn khóa lạc quan hay bi quan, cache invalidation ở đâu, và tại sao tác vụ nền phải idempotent. Hiểu "vì sao" quan trọng hơn code chạy được.</p>
+      </div>
+    </section>
+
+    <!-- 12 -->
+    <section id="s12">
+      <div class="sec-head"><span class="num">12</span><h2>Stack Python đề xuất &amp; bàn giao</h2></div>
+      <h3>Công cụ gợi ý (Python)</h3>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Thành phần</th><th>Đề xuất</th><th>Thay thế</th></tr></thead>
+          <tbody>
+            <tr><td>Web framework</td><td class="m">FastAPI (async)</td><td class="m">Django + DRF + Channels</td></tr>
+            <tr><td>DB &amp; ORM</td><td class="m">PostgreSQL + SQLAlchemy 2.0 + Alembic</td><td class="m">Django ORM</td></tr>
+            <tr><td>Redis client</td><td class="m">redis-py (async)</td><td class="m">—</td></tr>
+            <tr><td>Message Queue</td><td class="m">Celery + RabbitMQ + Celery beat</td><td class="m">Celery + Redis broker / Dramatiq</td></tr>
+            <tr><td>WebSocket</td><td class="m">FastAPI WebSocket + Redis pub/sub</td><td class="m">broadcaster / Channels</td></tr>
+            <tr><td>Auth</td><td class="m">python-jose/PyJWT + passlib(argon2/bcrypt)</td><td class="m">—</td></tr>
+            <tr><td>Test</td><td class="m">pytest + httpx + pytest-asyncio</td><td class="m">—</td></tr>
+            <tr><td>Ngoài lề</td><td class="m">Cổng thanh toán/SMS/email đều mock</td><td class="m">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>Bàn giao (deliverables)</h3>
+      <ul class="clean">
+        <li>Git repo với lịch sử commit sạch (conventional commits).</li>
+        <li><code>docker compose up</code> chạy được toàn hệ thống + <code>scripts/seed.py</code> tạo dữ liệu mẫu.</li>
+        <li><code>README.md</code> (chạy 1 lệnh) + <code>ARCHITECTURE.md</code> (giải thích concurrency, cache, MQ, WS).</li>
+        <li>Tài liệu API (OpenAPI/Swagger) + bộ test + báo cáo coverage + CI cấu hình.</li>
+        <li>(Khuyến khích) một video/screencast ngắn demo các luồng chính.</li>
+      </ul>
+    </section>
+
+    <!-- 13 -->
+    <section id="s13">
+      <div class="sec-head"><span class="num">13</span><h2>Mở rộng (stretch goals)</h2></div>
+      <ul class="clean">
+        <li><b>Gán tài xế theo vị trí gần nhất</b> (geo) thay vì gán ngẫu nhiên.</li>
+        <li><b>Surge pricing</b>: tăng phí giao theo nhu cầu/khung giờ.</li>
+        <li><b>Hoàn tiền + sổ cái (ledger)</b> ghi kép cho đối soát quán.</li>
+        <li><b>Observability</b>: Prometheus metrics + health/readiness chi tiết.</li>
+        <li><b>Load test</b> bằng k6/Locust, báo cáo throughput &amp; p95 latency.</li>
+        <li><b>Admin live-ops</b>: dashboard realtime toàn hệ thống qua WebSocket.</li>
+      </ul>
+    </section>
+
+  </main>
+</div>
+
+<footer>FoodHub — Backend Training Spec · Bản mô tả để giao cho thực tập sinh · Tick tiến độ được lưu cục bộ trên máy bạn.</footer>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- PRINT ---------- */
+  document.getElementById('printBtn').addEventListener('click', function(){ window.print(); });
+
+  /* ---------- SCROLL-SPY TOC ---------- */
+  var sections = Array.prototype.slice.call(document.querySelectorAll('main.content section'));
+  var links = {};
+  document.querySelectorAll('#toc a').forEach(function(a){
+    links[a.getAttribute('href').slice(1)] = a;
+  });
+
+  if ('IntersectionObserver' in window){
+    var current = null;
+    var obs = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if (e.isIntersecting){
+          if (current && links[current]) links[current].classList.remove('active');
+          current = e.target.id;
+          if (links[current]) links[current].classList.add('active');
+        }
+      });
+    }, { rootMargin: '-80px 0px -70% 0px', threshold: 0 });
+    sections.forEach(function(s){ obs.observe(s); });
+  }
+
+  document.querySelectorAll('#toc a').forEach(function(a){
+    a.addEventListener('click', function(){
+      // để scroll mượt + đóng đúng vị trí trên mobile
+      Object.values(links).forEach(function(l){ l.classList.remove('active'); });
+      a.classList.add('active');
+    });
+  });
+
+  /* ---------- DoD CHECKLIST + PERSISTENCE ---------- */
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('.checks input[type="checkbox"]'));
+  boxes.forEach(function(b, i){ b.dataset.idx = i; });
+  var KEY = 'foodhub_spec_dod_v1';
+  var hasStore = (typeof window !== 'undefined' && window.storage);
+  var state = {};
+
+  function updateBar(){
+    var total = boxes.length;
+    var done = boxes.filter(function(b){ return b.checked; }).length;
+    var pct = total ? Math.round(done / total * 100) : 0;
+    document.getElementById('dodPct').textContent = pct + '%';
+    document.getElementById('dodFill').style.width = pct + '%';
+  }
+
+  async function save(){
+    if (!hasStore) return;
+    var arr = boxes.filter(function(b){ return b.checked; }).map(function(b){ return +b.dataset.idx; });
+    try { await window.storage.set(KEY, JSON.stringify(arr)); } catch(e){}
+  }
+
+  async function load(){
+    if (!hasStore) return;
+    try {
+      var r = await window.storage.get(KEY);
+      if (r && r.value){
+        var arr = JSON.parse(r.value);
+        arr.forEach(function(idx){ if (boxes[idx]) boxes[idx].checked = true; });
+      }
+    } catch(e){}
+  }
+
+  boxes.forEach(function(b){
+    b.addEventListener('change', function(){ updateBar(); save(); });
+  });
+
+  document.getElementById('dodReset').addEventListener('click', function(){
+    boxes.forEach(function(b){ b.checked = false; });
+    updateBar(); save();
+  });
+
+  (async function init(){
+    await load();
+    updateBar();
+  })();
+})();
+</script>
+</body>
+</html>

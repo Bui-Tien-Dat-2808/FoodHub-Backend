@@ -1,4 +1,4 @@
-﻿services:
+services:
   postgres:
     image: postgres:16-alpine
     container_name: foodhub_postgres
@@ -53,6 +53,59 @@
       - ./app:/code/app
       - ./tests:/code/tests
       - ./docs:/code/docs
+      - ./scripts:/code/scripts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: foodhub_worker
+    restart: unless-stopped
+    command: celery -A app.core.celery_app.celery_app worker --loglevel=info -c 4
+    environment:
+      PROJECT_NAME: "FoodHub Worker"
+      ENVIRONMENT: development
+      POSTGRES_SERVER: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: foodhub_user
+      POSTGRES_PASSWORD: foodhub_password
+      POSTGRES_DB: foodhub_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SECRET_KEY: supersecretkey_change_me_in_production_foodhub_secret_key_12345
+    volumes:
+      - ./app:/code/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: foodhub_beat
+    restart: unless-stopped
+    command: celery -A app.core.celery_app.celery_app beat --loglevel=info
+    environment:
+      PROJECT_NAME: "FoodHub Beat"
+      ENVIRONMENT: development
+      POSTGRES_SERVER: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: foodhub_user
+      POSTGRES_PASSWORD: foodhub_password
+      POSTGRES_DB: foodhub_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SECRET_KEY: supersecretkey_change_me_in_production_foodhub_secret_key_12345
+    volumes:
+      - ./app:/code/app
     depends_on:
       postgres:
         condition: service_healthy

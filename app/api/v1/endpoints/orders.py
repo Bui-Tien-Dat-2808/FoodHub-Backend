@@ -22,6 +22,7 @@ from app.services.order_service import (
     list_orders_no_n_plus_one,
 )
 from app.services.order_state_machine import validate_state_transition
+from app.services.report_service import invalidate_revenue_report_cache
 from app.services.websocket_manager import ws_manager
 from app.tasks.notification_tasks import send_order_status_notification
 from app.tasks.order_tasks import auto_cancel_unpaid_order
@@ -192,6 +193,10 @@ async def update_order_status(
             "new_status": status_in.new_status.value,
         },
     )
+
+    # Nếu đơn giao thành công -> Xoá cache báo cáo doanh thu của quán
+    if status_in.new_status == OrderStatus.DELIVERED:
+        await invalidate_revenue_report_cache(redis, order.restaurant_id)
 
     await db.refresh(order, attribute_names=["items"])
     return order

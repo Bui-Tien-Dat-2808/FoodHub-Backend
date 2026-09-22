@@ -11,9 +11,15 @@ from app.api.deps import require_roles
 from app.core.database import get_db
 from app.core.redis import get_redis
 from app.models.driver import DriverAssignment, DriverProfile
-from app.models.enums import DriverAssignmentStatus, UserRole
+from app.models.enums import DriverAssignmentStatus, OrderStatus, UserRole
+from app.models.order import Order, OrderStatusHistory
 from app.models.user import User
-from app.schemas.driver import DriverLocationUpdate
+from app.schemas.driver import (
+    DriverAssignmentResponse,
+    DriverLocationUpdate,
+    DriverProfileResponse,
+    DriverStatusUpdate,
+)
 from app.services.websocket_manager import ws_manager
 
 router = APIRouter()
@@ -89,3 +95,135 @@ async def update_driver_location(
         "message": "Cập nhật vị trí thành công",
         "active_orders": len(assignments)
     }
+
+
+@router.get("/profile", response_model=DriverProfileResponse)
+async def get_driver_profile(
+    current_user: Annotated[User, Depends(require_roles([UserRole.DRIVER]))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Lấy thông tin hồ sơ tài xế hiện tại."""
+    stmt = select(DriverProfile).where(DriverProfile.user_id == current_user.id)
+    profile = (await db.execute(stmt)).scalar_one_or_none()
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy hồ sơ tài xế",
+        )
+    return profile
+
+
+@router.patch("/status", response_model=DriverProfileResponse)
+async def update_driver_status(
+    status_in: DriverStatusUpdate,
+    current_user: Annotated[User, Depends(require_roles([UserRole.DRIVER]))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Bật/tắt trạng thái sẵn sàng (online/offline) của tài xế."""
+    stmt = select(DriverProfile).where(DriverProfile.user_id == current_user.id)
+    profile = (await db.execute(stmt)).scalar_one_or_none()
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy hồ sơ tài xế",
+        )
+    profile.is_online = status_in.is_online
+    await db.commit()
+    await db.refresh(profile)
+    return profile
+
+
+@router.post("/deliveries/{order_id}/accept", response_model=DriverAssignmentResponse)
+async def accept_delivery(
+    order_id: int,
+    current_user: Annotated[User, Depends(require_roles([UserRole.DRIVER]))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[aioredis.Redis, Depends(get_redis)],
+):
+    """
+    Tài xế nhận đơn hàng đang chờ giao (READY_FOR_PICKUP).
+    - Yêu cầu tài xế đang online.
+    - Chống tranh chấp: Đảm bảo đơn chưa được tài xế khác nhận.
+    - Cập nhật trạng thái đơn thành DRIVER_ASSIGNED và bắn WebSocket realtime.
+    """
+    stmt_profile = select(DriverProfile).where(DriverProfile.user_id == current_user.id)
+    profile = (await db.execute(stmt_profile)).scalar_one_or_none()
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy hồ sơ tài xế",
+        )
+
+    if not profile.is_online:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tài xế cần bật trạng thái Online để nhận đơn hàng",
+        )
+
+    # 1. Kiểm tra đơn hàng
+    stmt_order = select(Order).where(Order.id == order_id)
+    order = (await db.execute(stmt_order)).scalar_one_or_none()
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy đơn hàng",
+        )
+
+    if order.status != OrderStatus.READY_FOR_PICKUP:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Không thể nhận đơn hàng ở trạng thái '{order.status.value}'",
+        )
+
+    # 2. Kiểm tra xem đơn đã có tài xế nhận chưa
+    stmt_existing = select(DriverAssignment).where(
+        DriverAssignment.order_id == order_id,
+        DriverAssignment.status.in_([
+            DriverAssignmentStatus.ACCEPTED,
+            DriverAssignmentStatus.ARRIVED_AT_STORE,
+            DriverAssignmentStatus.DELIVERING,
+        ]),
+    )
+    existing_assignment = (await db.execute(stmt_existing)).scalar_one_or_none()
+    if existing_assignment:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Đơn hàng đã được tài xế khác nhận",
+        )
+
+    # 3. Tạo phân công giao hàng & cập nhật trạng thái đơn
+    assignment = DriverAssignment(
+        order_id=order_id,
+        driver_id=profile.id,
+        status=DriverAssignmentStatus.ACCEPTED,
+    )
+    db.add(assignment)
+
+    order.status = OrderStatus.DRIVER_ASSIGNED
+    profile.is_busy = True
+
+    history = OrderStatusHistory(
+        order_id=order.id,
+        from_status=OrderStatus.READY_FOR_PICKUP.value,
+        to_status=OrderStatus.DRIVER_ASSIGNED.value,
+        changed_by_user_id=current_user.id,
+        reason="Tài xế nhận đơn giao",
+    )
+    db.add(history)
+    await db.commit()
+    await db.refresh(assignment)
+
+    # 4. Bắn WebSocket thông báo trạng thái đơn hàng đã đổi
+    await ws_manager.publish(
+        redis=redis,
+        channel=f"orders:{order.id}",
+        message={
+            "event": "ORDER_STATUS_CHANGED",
+            "order_id": order.id,
+            "old_status": OrderStatus.READY_FOR_PICKUP.value,
+            "new_status": OrderStatus.DRIVER_ASSIGNED.value,
+            "driver_id": current_user.id,
+        },
+    )
+
+    return assignment

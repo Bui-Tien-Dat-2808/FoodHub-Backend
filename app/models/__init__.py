@@ -1,4 +1,5 @@
-﻿from app.models.driver import DriverAssignment, DriverProfile
+﻿from app.models.audit_log import AuditLog
+from app.models.driver import DriverAssignment, DriverProfile
 from app.models.enums import DiscountType, DriverAssignmentStatus, OrderStatus, UserRole
 from app.models.order import Order, OrderItem, OrderStatusHistory
 from app.models.promotion import Voucher, VoucherUsage
@@ -20,4 +21,5 @@ __all__ = [
     "UserRole",
     "Voucher",
     "VoucherUsage",
+    "AuditLog"
 ]

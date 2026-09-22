@@ -58,9 +58,14 @@ class FakeRedis:
         if ex:
             self.expiry[key] = time.time() + ex
 
-    async def delete(self, key: str):
-        self.data.pop(key, None)
-        self.expiry.pop(key, None)
+    async def delete(self, *keys: str):
+        for k in keys:
+            self.data.pop(k, None)
+            self.expiry.pop(k, None)
+
+    async def keys(self, pattern: str):
+        import fnmatch
+        return [k for k in self.data.keys() if fnmatch.fnmatch(k, pattern)]
 
     async def incr(self, key: str):
         val = int(self.data.get(key, 0)) + 1

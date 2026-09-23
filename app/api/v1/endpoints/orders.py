@@ -9,13 +9,23 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
+from app.core.metrics import ORDERS_STATUS_CHANGED_TOTAL
 from app.core.rate_limiter import check_rate_limit
 from app.core.redis import get_redis
 from app.models.enums import OrderStatus, UserRole
 from app.models.order import Order, OrderStatusHistory
+from app.models.promotion import Voucher
 from app.models.restaurant import MenuItem, Restaurant
 from app.models.user import User
-from app.schemas.order import OrderCreate, OrderDetailResponse, OrderResponse, OrderStatusUpdate
+from app.schemas.order import (
+    OrderCancelRequest,
+    OrderCreate,
+    OrderDetailResponse,
+    OrderPayRequest,
+    OrderResponse,
+    OrderStatusUpdate,
+)
+from app.services.ledger_service import record_order_settlement
 from app.services.order_service import (
     create_order_transaction,
     get_order_by_idempotency_key,
@@ -26,6 +36,7 @@ from app.services.report_service import invalidate_revenue_report_cache
 from app.services.websocket_manager import ws_manager
 from app.tasks.notification_tasks import send_order_status_notification
 from app.tasks.order_tasks import auto_cancel_unpaid_order
+from app.tasks.payment_tasks import process_mock_payment_with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -100,13 +111,24 @@ async def create_order(
         except Exception as exc:
             logger.error(f"Không thể đẩy Celery task cho đơn #{order.id}: {exc}")
 
-        # 6. Bắn realtime thông báo đơn mới đến Quán ăn
+        # 6. Bắn realtime thông báo đơn mới đến Quán ăn và Admin Live-Ops
         try:
             await ws_manager.publish(
                 redis=redis,
                 channel=f"merchant:{order.restaurant_id}",
                 message={
                     "event": "NEW_ORDER",
+                    "order_id": order.id,
+                    "restaurant_id": order.restaurant_id,
+                    "total_amount": float(order.total_amount),
+                    "status": order.status.value,
+                    "created_at": order.created_at.isoformat(),
+                },
+            )
+            await ws_manager.broadcast_admin_live_ops(
+                redis=redis,
+                message={
+                    "event": "ORDER_CREATED",
                     "order_id": order.id,
                     "restaurant_id": order.restaurant_id,
                     "total_amount": float(order.total_amount),
@@ -175,6 +197,7 @@ async def update_order_status(
     )
     db.add(history)
     await db.commit()
+    ORDERS_STATUS_CHANGED_TOTAL.labels(status=status_in.new_status.value).inc()
 
     try:
         customer = (await db.execute(select(User).where(User.id == order.customer_id))).scalar_one_or_none()
@@ -193,9 +216,21 @@ async def update_order_status(
             "new_status": status_in.new_status.value,
         },
     )
+    await ws_manager.broadcast_admin_live_ops(
+        redis=redis,
+        message={
+            "event": "ORDER_STATUS_CHANGED",
+            "order_id": order.id,
+            "old_status": old_status.value,
+            "new_status": status_in.new_status.value,
+        },
+    )
 
     # Nếu đơn giao thành công -> Xoá cache báo cáo doanh thu của quán
+    # Nếu đơn giao thành công -> Hạch toán sổ cái ghi kép & xoá cache báo cáo doanh thu của quán
     if status_in.new_status == OrderStatus.DELIVERED:
+        await record_order_settlement(db, order)
+        await db.commit()
         await invalidate_revenue_report_cache(redis, order.restaurant_id)
 
     await db.refresh(order, attribute_names=["items"])
@@ -230,4 +265,152 @@ async def get_order_detail(
         if not restaurant or restaurant.owner_id != current_user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bạn không có quyền xem đơn hàng này")
 
+    return order
+
+
+@router.post("/{order_id}/pay", response_model=OrderResponse)
+async def pay_order(
+    order_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[aioredis.Redis, Depends(get_redis)],
+    pay_in: OrderPayRequest | None = None,
+):
+    """Khách hàng thanh toán đơn hàng (mock payment gateway)."""
+    stmt = select(Order).options(selectinload(Order.items)).where(Order.id == order_id)
+    order = (await db.execute(stmt)).scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy đơn hàng")
+
+    if current_user.role == UserRole.CUSTOMER and order.customer_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bạn không có quyền thanh toán đơn hàng này")
+
+    if order.status != OrderStatus.SUBMITTED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Đơn hàng đang ở trạng thái '{order.status.value}', không thể thanh toán",
+        )
+
+    payment_method = pay_in.payment_method if pay_in else "MOCK_WALLET"
+
+    # Kích hoạt mock payment task Celery
+    try:
+        process_mock_payment_with_retry.delay(order.id, order.total_amount)
+    except Exception as exc:
+        logger.error(f"Lỗi khi kích hoạt Celery payment task cho đơn #{order.id}: {exc}")
+
+    old_status = order.status
+    order.status = OrderStatus.MERCHANT_ACCEPTED
+
+    history = OrderStatusHistory(
+        order_id=order.id,
+        from_status=old_status.value,
+        to_status=OrderStatus.MERCHANT_ACCEPTED.value,
+        changed_by_user_id=current_user.id,
+        reason=f"Khách thanh toán thành công qua {payment_method}",
+    )
+    db.add(history)
+    await db.commit()
+
+    # WebSocket broadcast
+    await ws_manager.publish(
+        redis=redis,
+        channel=f"orders:{order.id}",
+        message={
+            "event": "ORDER_STATUS_CHANGED",
+            "order_id": order.id,
+            "old_status": old_status.value,
+            "new_status": OrderStatus.MERCHANT_ACCEPTED.value,
+            "payment_method": payment_method,
+        },
+    )
+    await ws_manager.broadcast_admin_live_ops(
+        redis=redis,
+        message={
+            "event": "ORDER_STATUS_CHANGED",
+            "order_id": order.id,
+            "old_status": old_status.value,
+            "new_status": OrderStatus.MERCHANT_ACCEPTED.value,
+            "payment_method": payment_method,
+        },
+    )
+
+    await db.refresh(order, attribute_names=["items"])
+    return order
+
+
+@router.post("/{order_id}/cancel", response_model=OrderResponse)
+async def cancel_order(
+    order_id: int,
+    cancel_in: OrderCancelRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[aioredis.Redis, Depends(get_redis)],
+):
+    """Hủy đơn hàng có lý do (khách, quán hoặc admin). Hoàn tồn kho và voucher."""
+    stmt = select(Order).options(selectinload(Order.items)).where(Order.id == order_id)
+    order = (await db.execute(stmt)).scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy đơn hàng")
+
+    # Kiểm tra quyền sở hữu
+    if current_user.role == UserRole.CUSTOMER and order.customer_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bạn không có quyền hủy đơn hàng này")
+    elif current_user.role == UserRole.MERCHANT:
+        restaurant = (await db.execute(select(Restaurant).where(Restaurant.id == order.restaurant_id))).scalar_one_or_none()
+        if not restaurant or restaurant.owner_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bạn không có quyền hủy đơn hàng này")
+
+    # Validate qua State Machine
+    validate_state_transition(order.status, OrderStatus.CANCELLED, current_user.role)
+
+    old_status = order.status
+    order.status = OrderStatus.CANCELLED
+
+    # Hoàn trả tồn kho
+    for order_item in order.items:
+        item = (await db.execute(select(MenuItem).where(MenuItem.id == order_item.menu_item_id))).scalar_one_or_none()
+        if item:
+            item.stock_quantity += order_item.quantity
+
+    # Hoàn lượt dùng voucher nếu có
+    if order.voucher_id:
+        v = (await db.execute(select(Voucher).where(Voucher.id == order.voucher_id))).scalar_one_or_none()
+        if v and v.used_count > 0:
+            v.used_count -= 1
+
+    history = OrderStatusHistory(
+        order_id=order.id,
+        from_status=old_status.value,
+        to_status=OrderStatus.CANCELLED.value,
+        changed_by_user_id=current_user.id,
+        reason=cancel_in.reason,
+    )
+    db.add(history)
+    await db.commit()
+
+    # WebSocket broadcast
+    await ws_manager.publish(
+        redis=redis,
+        channel=f"orders:{order.id}",
+        message={
+            "event": "ORDER_STATUS_CHANGED",
+            "order_id": order.id,
+            "old_status": old_status.value,
+            "new_status": OrderStatus.CANCELLED.value,
+            "reason": cancel_in.reason,
+        },
+    )
+    await ws_manager.broadcast_admin_live_ops(
+        redis=redis,
+        message={
+            "event": "ORDER_STATUS_CHANGED",
+            "order_id": order.id,
+            "old_status": old_status.value,
+            "new_status": OrderStatus.CANCELLED.value,
+            "reason": cancel_in.reason,
+        },
+    )
+
+    await db.refresh(order, attribute_names=["items"])
     return order

@@ -85,6 +85,9 @@ class FakeRedis:
     async def publish(self, channel: str, message: str):
         return 1
 
+    async def ping(self):
+        return True
+
     async def aclose(self):
         pass
 
@@ -122,12 +125,16 @@ def mock_celery_tasks(monkeypatch):
 
     from app.tasks.notification_tasks import send_order_status_notification
     from app.tasks.order_tasks import auto_cancel_unpaid_order
+    from app.tasks.payment_tasks import process_mock_payment_with_retry
 
     mock_send = MagicMock()
     mock_cancel = MagicMock()
+    mock_pay = MagicMock()
     monkeypatch.setattr(send_order_status_notification, "delay", mock_send)
     monkeypatch.setattr(auto_cancel_unpaid_order, "apply_async", mock_cancel)
     return {"send_notification": mock_send, "auto_cancel": mock_cancel}
+    monkeypatch.setattr(process_mock_payment_with_retry, "delay", mock_pay)
+    return {"send_notification": mock_send, "auto_cancel": mock_cancel, "pay": mock_pay}
 
 
 @pytest.fixture(autouse=True)

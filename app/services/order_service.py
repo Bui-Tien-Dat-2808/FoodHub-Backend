@@ -7,12 +7,14 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.metrics import ORDERS_CREATED_TOTAL
 from app.models.enums import DiscountType, OrderStatus, UserRole
 from app.models.order import Order, OrderItem, OrderStatusHistory
 from app.models.promotion import Voucher, VoucherUsage
 from app.models.restaurant import MenuItem, Restaurant
 from app.models.user import User
 from app.schemas.order import OrderCreate
+from app.services.pricing_service import calculate_delivery_fee, compute_dynamic_surge
 
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -24,15 +26,6 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     dlon = math.radians(lon2 - lon1)
     a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
     return round(R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)), 2)
-
-def calculate_delivery_fee(distance_km: float) -> int:
-    """
-        2km đầu: 15.000đ, mỗi km sau: +5.000đ
-    """
-    if distance_km <= 2.0:
-        return 15000
-    extra_km = math.ceil(distance_km - 2.0)
-    return 15000 + int(extra_km * 5000)
 
 async def create_order_transaction(
     db: AsyncSession,
@@ -49,9 +42,10 @@ async def create_order_transaction(
     if not restaurant.is_open:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nhà hàng hiện đang đóng cửa")
 
-    # 2. Tính khoảng cách và phí ship
+    # 2. Tính khoảng cách và phí ship (kèm Surge Pricing)
     distance_km = haversine_distance(restaurant.latitude, restaurant.longitude, order_in.delivery_lat, order_in.delivery_lng)
-    delivery_fee = calculate_delivery_fee(distance_km)
+    surge_multiplier, _ = await compute_dynamic_surge(db, restaurant.latitude, restaurant.longitude)
+    delivery_fee = calculate_delivery_fee(distance_km, surge_multiplier=surge_multiplier)
 
     # 3. Lấy danh sách món ăn từ DB & kiểm tra tính hợp lệ
     item_map = {
@@ -187,6 +181,7 @@ async def create_order_transaction(
         delivery_address = order_in.delivery_address,
         subtotal = subtotal,
         delivery_fee = delivery_fee,
+        surge_multiplier = surge_multiplier,
         discount_amount = discount_amount,
         total_amount = total_amount,
         voucher_id = voucher_id,
@@ -214,6 +209,7 @@ async def create_order_transaction(
     db.add(history)
 
     await db.commit()
+    ORDERS_CREATED_TOTAL.inc()
     return order
 
 

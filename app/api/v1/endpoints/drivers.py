@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,10 +15,16 @@ from app.models.enums import DriverAssignmentStatus, OrderStatus, UserRole
 from app.models.order import Order, OrderStatusHistory
 from app.models.user import User
 from app.schemas.driver import (
+    AutoAssignResponse,
     DriverAssignmentResponse,
     DriverLocationUpdate,
     DriverProfileResponse,
     DriverStatusUpdate,
+    NearbyDriverResponse,
+)
+from app.services.driver_matching_service import (
+    auto_assign_nearest_driver,
+    find_nearby_available_drivers,
 )
 from app.services.websocket_manager import ws_manager
 
@@ -227,3 +233,50 @@ async def accept_delivery(
     )
 
     return assignment
+
+
+@router.get("/nearby", response_model=list[NearbyDriverResponse])
+async def get_nearby_available_drivers(
+    lat: Annotated[float, Query(..., ge=-90.0, le=90.0, description="Vĩ độ mục tiêu")],
+    lng: Annotated[float, Query(..., ge=-180.0, le=180.0, description="Kinh độ mục tiêu")],
+    current_user: Annotated[User, Depends(require_roles([UserRole.ADMIN, UserRole.MERCHANT]))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[aioredis.Redis, Depends(get_redis)],
+    radius_km: float = Query(5.0, ge=0.5, le=50.0, description="Bán kính tìm kiếm (km)"),
+    limit: int = Query(5, ge=1, le=20, description="Số lượng tài xế tối đa"),
+):
+    """
+    Tìm danh sách tài xế đang online, rảnh rỗi quanh một toạ độ (nhà hàng hoặc địa chỉ).
+    Chỉ dành cho ADMIN hoặc MERCHANT.
+    """
+    candidates = await find_nearby_available_drivers(
+        db=db,
+        redis=redis,
+        target_lat=lat,
+        target_lng=lng,
+        max_radius_km=radius_km,
+        limit=limit,
+    )
+    return candidates
+
+
+@router.post("/auto-assign/{order_id}", response_model=AutoAssignResponse)
+async def auto_assign_driver(
+    order_id: int,
+    current_user: Annotated[User, Depends(require_roles([UserRole.ADMIN, UserRole.MERCHANT]))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[aioredis.Redis, Depends(get_redis)],
+    radius_km: float = Query(5.0, ge=0.5, le=50.0, description="Bán kính tìm kiếm tài xế (km)"),
+):
+    """
+    Tự động tìm và gán tài xế gần nhất trong bán kính cho đơn hàng READY_FOR_PICKUP.
+    Dành cho ADMIN hoặc MERCHANT sở hữu nhà hàng của đơn hàng.
+    """
+    result = await auto_assign_nearest_driver(
+        db=db,
+        redis=redis,
+        order_id=order_id,
+        actor_user=current_user,
+        max_radius_km=radius_km,
+    )
+    return result

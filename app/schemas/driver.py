@@ -36,3 +36,25 @@ class DriverAssignmentResponse(BaseModel):
     delivered_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class NearbyDriverResponse(BaseModel):
+    driver_id: int
+    user_id: int
+    full_name: str
+    phone_number: str | None = None
+    license_plate: str
+    distance_km: float
+    current_lat: float
+    current_lng: float
+    rating: float
+
+
+class AutoAssignResponse(BaseModel):
+    order_id: int
+    driver_id: int
+    driver_name: str
+    license_plate: str
+    distance_km: float
+    status: str
+    message: str

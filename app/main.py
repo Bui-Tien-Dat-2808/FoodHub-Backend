@@ -4,10 +4,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 import app.models
-from app.api.v1.endpoints import websockets
+from app.api.v1.endpoints import health, websockets
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.database import Base, engine
+from app.core.metrics import PrometheusMetricsMiddleware, get_metrics_response
 from app.middleware.security import SecurityHeadersMiddleware
 
 
@@ -36,9 +37,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(PrometheusMetricsMiddleware)
 
 app.include_router(api_router, prefix="/api/v1")
 app.include_router(websockets.router, prefix="/ws", tags=["WebSocket"])
+app.include_router(health.router, prefix="/health", tags=["Health & Probes"])
+
+
+@app.get("/metrics", tags=["Observability"])
+async def prometheus_metrics():
+    """Endpoint xuất số liệu metrics chuẩn Prometheus cho hệ thống giám sát (Prometheus/Grafana)."""
+    return get_metrics_response()
+
 
 @app.get("/health", tags=["Health Check"])
 async def health_check():

@@ -183,3 +183,96 @@ async def test_order_cancellation_restores_inventory(client: AsyncClient):
     menu_res = await client.get(f"/api/v1/menu/restaurants/{rest_id}/items")
     item = next(i for i in menu_res.json() if i["id"] == item_id)
     assert item["stock_quantity"] == 10
+
+
+@pytest.mark.anyio
+async def test_dedicated_pay_and_cancel_endpoints(client: AsyncClient):
+    """Kiểm thử 2 endpoint chuyên biệt POST /orders/{id}/pay và POST /orders/{id}/cancel."""
+    # 1. Tạo Merchant & Quán
+    await client.post("/api/v1/auth/register", json={
+        "email": "m_pay_cancel@foodhub.com",
+        "password": "password123",
+        "full_name": "Merchant Pay Cancel",
+        "role": "MERCHANT"
+    })
+    m_token = (await client.post("/api/v1/auth/login", json={
+        "email": "m_pay_cancel@foodhub.com",
+        "password": "password123"
+    })).json()["access_token"]
+    m_headers = {"Authorization": f"Bearer {m_token}"}
+
+    rest_res = await client.post("/api/v1/restaurants/", headers=m_headers, json={
+        "name": "Bun Bo Hue O Xuan",
+        "address": "25 Le Duan",
+        "latitude": 10.7812,
+        "longitude": 106.6990
+    })
+    rest_id = rest_res.json()["id"]
+
+    item_res = await client.post(f"/api/v1/menu/restaurants/{rest_id}/items", headers=m_headers, json={
+        "name": "Bun Bo Dac Biet",
+        "base_price": 60000,
+        "stock_quantity": 20,
+        "is_available": True
+    })
+    item_id = item_res.json()["id"]
+
+    # 2. Tạo Customer
+    await client.post("/api/v1/auth/register", json={
+        "email": "c_pay_cancel@foodhub.com",
+        "password": "password123",
+        "full_name": "Customer Pay Cancel",
+        "role": "CUSTOMER"
+    })
+    c_token = (await client.post("/api/v1/auth/login", json={
+        "email": "c_pay_cancel@foodhub.com",
+        "password": "password123"
+    })).json()["access_token"]
+    c_headers = {"Authorization": f"Bearer {c_token}"}
+
+    # 3. Đặt đơn 1 để test POST /pay
+    order1_res = await client.post("/api/v1/orders/", headers=c_headers, json={
+        "restaurant_id": rest_id,
+        "items": [{"menu_item_id": item_id, "quantity": 1}],
+        "delivery_lat": 10.7820,
+        "delivery_lng": 106.7000,
+        "delivery_address": "30 Le Duan"
+    })
+    order1_id = order1_res.json()["id"]
+    assert order1_res.json()["status"] == "SUBMITTED"
+
+    # Gọi POST /orders/{id}/pay
+    pay_res = await client.post(
+        f"/api/v1/orders/{order1_id}/pay",
+        headers=c_headers,
+        json={"payment_method": "MOCK_WALLET"}
+    )
+    assert pay_res.status_code == 200
+    assert pay_res.json()["status"] == "MERCHANT_ACCEPTED"
+
+    # Thanh toán lại lần 2 -> 400 Bad Request
+    pay_again = await client.post(
+        f"/api/v1/orders/{order1_id}/pay",
+        headers=c_headers,
+        json={"payment_method": "MOCK_WALLET"}
+    )
+    assert pay_again.status_code == 400
+
+    # 4. Đặt đơn 2 để test POST /cancel
+    order2_res = await client.post("/api/v1/orders/", headers=c_headers, json={
+        "restaurant_id": rest_id,
+        "items": [{"menu_item_id": item_id, "quantity": 2}],
+        "delivery_lat": 10.7820,
+        "delivery_lng": 106.7000,
+        "delivery_address": "30 Le Duan"
+    })
+    order2_id = order2_res.json()["id"]
+
+    # Gọi POST /orders/{id}/cancel
+    cancel_res = await client.post(
+        f"/api/v1/orders/{order2_id}/cancel",
+        headers=c_headers,
+        json={"reason": "Khach muon doi sang mon khac"}
+    )
+    assert cancel_res.status_code == 200
+    assert cancel_res.json()["status"] == "CANCELLED"

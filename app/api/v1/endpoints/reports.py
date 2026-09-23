@@ -12,7 +12,9 @@ from app.core.redis import get_redis
 from app.models.enums import UserRole
 from app.models.restaurant import Restaurant
 from app.models.user import User
+from app.schemas.ledger import RestaurantReconciliationResponse
 from app.schemas.report import RevenueReportResponse
+from app.services.ledger_service import get_restaurant_reconciliation
 from app.services.report_service import get_revenue_report
 
 router = APIRouter()
@@ -74,3 +76,39 @@ async def get_revenue_statistics(
         end_date=end
     )
     return report
+
+
+@router.get("/reconciliation/restaurant/{restaurant_id}", response_model=RestaurantReconciliationResponse)
+async def get_restaurant_reconciliation_report(
+    restaurant_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    Báo cáo sao kê đối soát tài chính (Reconciliation) cho nhà hàng:
+    - MERCHANT: Chỉ được xem sao kê quán do mình sở hữu
+    - ADMIN: Xem được sao kê của bất kỳ quán nào
+    """
+    stmt = select(Restaurant).where(Restaurant.id == restaurant_id)
+    restaurant = (await db.execute(stmt)).scalar_one_or_none()
+    if not restaurant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy nhà hàng",
+        )
+
+    if current_user.role == UserRole.MERCHANT:
+        if restaurant.owner_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Bạn không có quyền xem sao kê đối soát của nhà hàng này",
+            )
+    elif current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ Quản trị viên hoặc Chủ quán mới có quyền xem đối soát",
+        )
+
+    reconciliation = await get_restaurant_reconciliation(db=db, restaurant_id=restaurant_id)
+    return reconciliation
+

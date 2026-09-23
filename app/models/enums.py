@@ -29,3 +29,15 @@ class DriverAssignmentStatus(str, Enum):
     DELIVERING = "DELIVERING" # Tài xế đang giao hàng
     COMPLETED = "COMPLETED" # Tài xế đã giao hàng thành công
     CANCELED = "CANCELED" # Tài xế hủy đơn
+
+
+class LedgerAccountType(str, Enum):
+    CUSTOMER = "CUSTOMER"
+    RESTAURANT = "RESTAURANT"
+    PLATFORM = "PLATFORM"
+
+
+class LedgerEntryType(str, Enum):
+    DEBIT = "DEBIT"
+    CREDIT = "CREDIT"
+

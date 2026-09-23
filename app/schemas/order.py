@@ -37,12 +37,20 @@ class OrderResponse(BaseModel):
     delivery_lng: float
     subtotal: int
     delivery_fee: int
+    surge_multiplier: float = 1.0
     discount_amount: int
     total_amount: int
     created_at: datetime
     items: list[OrderItemResponse]
 
     model_config = ConfigDict(from_attributes=True)
+
+class OrderCancelRequest(BaseModel):
+    reason: str = Field(min_length=3, max_length=255, description="Lý do hủy đơn hàng")
+
+
+class OrderPayRequest(BaseModel):
+    payment_method: str = Field(default="MOCK_WALLET", description="Phương thức thanh toán: MOCK_WALLET, BANKING, COD")
 
 class OrderStatusUpdate(BaseModel):
     new_status: OrderStatus

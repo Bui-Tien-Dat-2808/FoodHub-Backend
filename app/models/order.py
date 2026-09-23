@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String
 from sqlalchemy import Enum as SQLEnum
@@ -8,6 +9,9 @@ from app.core.database import Base
 from app.models.enums import OrderStatus
 from app.models.restaurant import MenuItem, Restaurant
 from app.models.user import User
+
+if TYPE_CHECKING:
+    from app.models.ledger import LedgerEntry
 
 
 class Order(Base):
@@ -31,6 +35,7 @@ class Order(Base):
 
     subtotal: Mapped[int] = mapped_column(Integer, nullable=False)        # Tiền món
     delivery_fee: Mapped[int] = mapped_column(Integer, nullable=False)    # Phí ship
+    surge_multiplier: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)  # Hệ số phụ thu cao điểm
     discount_amount: Mapped[int] = mapped_column(Integer, default=0)     # Tiền giảm voucher
     total_amount: Mapped[int] = mapped_column(Integer, nullable=False)    # Tổng thanh toán
 
@@ -40,6 +45,7 @@ class Order(Base):
 
     items: Mapped[list["OrderItem"]] = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
     histories: Mapped[list["OrderStatusHistory"]] = relationship("OrderStatusHistory", back_populates="order")
+    ledger_entries: Mapped[list["LedgerEntry"]] = relationship("LedgerEntry", back_populates="order", cascade="all, delete-orphan")
 
     restaurant: Mapped["Restaurant"] = relationship("Restaurant")
     customer: Mapped["User"] = relationship("User")

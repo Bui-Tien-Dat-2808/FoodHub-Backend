@@ -13,8 +13,10 @@ from app.models.enums import OrderStatus, UserRole
 from app.models.order import Order
 from app.models.user import User
 from app.schemas.admin import AuditLogResponse, RefundRequest, RefundResponse
+from app.schemas.ledger import LedgerEntryResponse
 from app.schemas.order import OrderResponse
 from app.services.audit_service import log_audit
+from app.services.ledger_service import get_order_ledger_entries, record_order_refund
 
 router = APIRouter()
 
@@ -81,6 +83,16 @@ async def refund_order(
         after_state={"refund_amount": refund_amount, "reason": data.reason},
         ip_address=ip_addr
     )
+
+    # Ghi nhận bút toán sổ cái ghi kép (Double-Entry Ledger)
+    await record_order_refund(
+        db=db,
+        order=order,
+        refund_amount=refund_amount,
+        reason=data.reason,
+    )
+    await db.commit()
+
     return RefundResponse(
         order_id=order.id,
         refund_amount=refund_amount,
@@ -88,6 +100,19 @@ async def refund_order(
         status="REFUNDED",
         refunded_at=datetime.now(UTC),
     )
+
+
+@router.get("/orders/{order_id}/ledger", response_model=list[LedgerEntryResponse])
+async def get_order_ledger(
+    order_id: int,
+    current_user: Annotated[User, Depends(require_roles([UserRole.ADMIN]))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Admin xem toàn bộ các bút toán sổ cái ghi kép của một đơn hàng."""
+    entries = await get_order_ledger_entries(db=db, order_id=order_id)
+    return entries
+
+
 @router.get("/audit-logs", response_model=list[AuditLogResponse])
 async def list_audit_logs(
     current_user: Annotated[User, Depends(require_roles([UserRole.ADMIN]))],

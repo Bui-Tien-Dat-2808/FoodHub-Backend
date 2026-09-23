@@ -117,8 +117,10 @@ async def test_revenue_report_aggregation_and_cache(client: AsyncClient):
         "delivery_address": "Chùa Cầu"
     })
     o1_id = o1_res.json()["id"]
+    o1_fee = o1_res.json()["delivery_fee"]
 
     # Đơn 2: 1 phần Gỏi Gà (subtotal = 70.000, fee = 15.000, total = 85.000)
+    # Đơn 2: 1 phần Gỏi Gà
     o2_res = await client.post("/api/v1/orders/", headers=b1_headers, json={
         "restaurant_id": rest_id,
         "items": [{"menu_item_id": item2_id, "quantity": 1}],
@@ -127,6 +129,7 @@ async def test_revenue_report_aggregation_and_cache(client: AsyncClient):
         "delivery_address": "Chùa Cầu"
     })
     o2_id = o2_res.json()["id"]
+    o2_fee = o2_res.json()["delivery_fee"]
 
     # 3. Chuyển Đơn 1 sang DELIVERED (SUBMITTED -> MERCHANT_ACCEPTED -> READY_FOR_PICKUP -> PICKED_UP -> DELIVERED)
     # Lần lượt theo State Machine FSM:
@@ -161,9 +164,9 @@ async def test_revenue_report_aggregation_and_cache(client: AsyncClient):
 
     assert rep1["total_orders"] == 1
     assert rep1["total_food_amount"] == 100000
-    assert rep1["total_delivery_fees"] == 15000
-    assert rep1["total_revenue"] == 115000
-    assert rep1["average_order_value"] == 115000.0
+    assert rep1["total_delivery_fees"] == o1_fee
+    assert rep1["total_revenue"] == 100000 + o1_fee
+    assert rep1["average_order_value"] == float(100000 + o1_fee)
 
     assert len(rep1["top_selling_items"]) == 1
     assert rep1["top_selling_items"][0]["menu_item_id"] == item1_id
@@ -190,10 +193,12 @@ async def test_revenue_report_aggregation_and_cache(client: AsyncClient):
     assert rep3_res.status_code == 200
     rep3 = rep3_res.json()
 
+    total_expected_fees = o1_fee + o2_fee
+    total_expected_revenue = 170000 + total_expected_fees
+
     assert rep3["total_orders"] == 2
-    # Tổng tiền: 115.000 (đơn 1) + 85.000 (đơn 2) = 200.000
-    assert rep3["total_revenue"] == 200000
+    assert rep3["total_revenue"] == total_expected_revenue
     assert rep3["total_food_amount"] == 170000
-    assert rep3["total_delivery_fees"] == 30000
-    assert rep3["average_order_value"] == 100000.0
+    assert rep3["total_delivery_fees"] == total_expected_fees
+    assert rep3["average_order_value"] == float(total_expected_revenue / 2)
     assert len(rep3["top_selling_items"]) == 2

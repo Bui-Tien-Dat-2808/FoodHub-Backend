@@ -94,6 +94,49 @@ Kỹ thuật này phát sinh chính xác 2 câu query tối ưu (dùng toán t�
   - `check_positive_total_amount`: Ràng buộc `orders.total_amount >= 0`.
 * **Unique Constraints:** `voucher_usages(voucher_id, user_id)` đảm bảo mỗi khách chỉ được dùng 1 voucher 1 lần duy nhất ở cấp độ CSDL.
 
+### 2.5. Báo cáo Thực nghiệm EXPLAIN ANALYZE: Tối ưu Truy vấn Nóng bằng Composite Index
+
+Đặc tả yêu cầu phân tích hiệu năng của 1 truy vấn nóng trước và sau khi đánh index.
+
+**Truy vấn khảo sát:** Lọc các đơn hàng hoàn thành (`DELIVERED`) trong 30 ngày gần nhất và sắp xếp giảm dần theo thời gian tạo:
+```sql
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id, order_code, status, total_amount, created_at
+FROM orders
+WHERE status = 'DELIVERED'
+  AND created_at >= NOW() - INTERVAL '30 days'
+ORDER BY created_at DESC;
+```
+
+#### 1. Khi chưa dùng Index (hoặc khi ép Sequential Scan):
+```text
+Sort  (cost=1.03..1.03 rows=1 width=138) (actual time=0.048..0.048 rows=0 loops=1)
+  Sort Key: created_at DESC
+  Sort Method: quicksort  Memory: 25kB
+  Buffers: shared hit=4
+  ->  Seq Scan on orders  (cost=0.00..1.02 rows=1 width=138) (actual time=0.019..0.019 rows=0 loops=1)
+        Filter: ((status = 'DELIVERED'::orderstatus) AND (created_at >= (now() - '30 days'::interval)))
+        Rows Removed by Filter: 1
+        Buffers: shared hit=1
+Planning Time: 3.677 ms
+Execution Time: 0.065 ms
+```
+* **Nhược điểm:** PostgreSQL phải duyệt toàn bộ bảng (`Seq Scan`), kiểm tra từng dòng, và đặc biệt phải tốn thêm một công đoạn sắp xếp trong RAM (`quicksort Memory: 25kB`) theo `created_at DESC`. Khi bảng có hàng trăm nghìn đơn hàng, chi phí sắp xếp trong bộ nhớ (hoặc tràn ra ổ đĩa - disk sort) sẽ gây thắt cổ chai nghiêm trọng.
+
+#### 2. Sau khi tối ưu với Composite Index `ix_orders_status_created_at(status, created_at)`:
+```text
+Index Scan Backward using ix_orders_status_created_at on orders  (cost=0.13..8.15 rows=1 width=138) (actual time=0.068..0.068 rows=0 loops=1)
+  Index Cond: ((status = 'DELIVERED'::orderstatus) AND (created_at >= (now() - '30 days'::interval)))
+  Index Searches: 1
+  Buffers: shared read=1
+Planning Time: 0.102 ms
+Execution Time: 0.081 ms
+```
+* **Ưu điểm vượt trội:**
+  1. **Triệt tiêu hoàn toàn bước `Sort`:** PostgreSQL duyệt ngược trực tiếp trên cây B-Tree (`Index Scan Backward`), tận dụng thứ tự tự nhiên của index mà **không cần chạy quicksort** trong RAM.
+  2. **Truy xuất trực tiếp theo Index Condition:** Chỉ đọc các trang index thỏa mãn `status = 'DELIVERED'` và `created_at >= ...`, bỏ qua hoàn toàn các dòng dữ liệu không liên quan.
+  3. Độ phức tạp truy vấn giảm từ $O(N \log N)$ xuống $O(\log N + K)$ ($K$ là số lượng kết quả thỏa mãn).
+
 ---
 
 ## 3. TRỤ CỘT 2: CHIẾN LƯỢC CACHING & DỮ LIỆU PHÂN TÁN (REDIS)

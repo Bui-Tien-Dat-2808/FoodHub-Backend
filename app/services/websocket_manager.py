@@ -17,6 +17,11 @@ class WebSocketConnectionManager:
         """Kết nối WebSocket"""
         await websocket.accept()
         self.active_connections[channel].add(websocket)
+        try:
+            from app.core.metrics import ACTIVE_WEBSOCKET_CONNECTIONS
+            ACTIVE_WEBSOCKET_CONNECTIONS.labels(channel=channel).inc()
+        except Exception:
+            pass
         logger.info(f"Client kết nối vào channel '{channel}'")
 
     def disconnect(self, websocket: WebSocket, channel: str) -> None:
@@ -25,7 +30,16 @@ class WebSocketConnectionManager:
             self.active_connections[channel].discard(websocket)
             if not self.active_connections[channel]:
                 del self.active_connections[channel]
+        try:
+            from app.core.metrics import ACTIVE_WEBSOCKET_CONNECTIONS
+            ACTIVE_WEBSOCKET_CONNECTIONS.labels(channel=channel).dec()
+        except Exception:
+            pass
         logger.info(f"Client rời channel '{channel}'")
+
+    def get_total_connections_count(self) -> int:
+        """Trả về tổng số kết nối WebSocket đang mở trên toàn bộ channels."""
+        return sum(len(conns) for conns in self.active_connections.values())
 
     async def broadcast_local(self, channel: str, message: dict[str, Any]) -> None:
         """Gửi message tới các Client đang kết nối với WebSocket"""
@@ -53,5 +67,10 @@ class WebSocketConnectionManager:
                 await redis.publish(channel, json.dumps(message))
         except Exception as e:
             logger.warning(f"Không thể publish tới '{channel}': {e}")
+
+    async def broadcast_admin_live_ops(self, redis: aioredis.Redis, message: dict[str, Any]) -> None:
+        """Phát sóng sự kiện realtime tới kênh Admin Live-Ops."""
+        await self.publish(redis, "admin:live_ops", message)
+
 
 ws_manager = WebSocketConnectionManager()

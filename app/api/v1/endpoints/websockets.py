@@ -161,3 +161,72 @@ async def merchant_order_feed(
                 await websocket.send_text("pong")
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket, channel)
+
+
+@router.websocket("/admin/live-ops")
+async def admin_live_ops_feed(
+    websocket: WebSocket,
+    token: str | None = Query(None),
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+):
+    """
+    WebSocket Realtime Dashboard cho Quản trị viên (Admin Live-Ops):
+    - Kiểm soát phân quyền: Chỉ ADMIN được phép kết nối (đóng 1008 nếu vi phạm).
+    - Cung cấp INITIAL_SNAPSHOT với số liệu vận hành toàn hệ thống.
+    - Nhận lệnh 'ping' -> phản hồi 'pong' (heartbeat).
+    - Nhận lệnh 'refresh' -> trả về METRICS_UPDATE mới nhất.
+    - Nhận broadcast realtime các sự kiện phát sinh từ hệ thống qua channel 'admin:live_ops'.
+    """
+    current_user = await get_current_user_ws(websocket, token, db)
+    if not current_user:
+        return
+
+    # Chỉ cho phép ADMIN
+    if current_user.role != UserRole.ADMIN:
+        await db.rollback()
+        await db.close()
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Admin role required")
+        return
+
+    channel = "admin:live_ops"
+    await ws_manager.connect(websocket, channel)
+
+    # 1. Tính toán & gửi Snapshot khởi tạo
+    try:
+        from app.services.live_ops_service import get_live_ops_snapshot
+        snapshot = await get_live_ops_snapshot(db)
+        await websocket.send_json({
+            "event": "INITIAL_SNAPSHOT",
+            "channel": channel,
+            "data": snapshot,
+        })
+    except Exception as exc:
+        logger.error(f"Lỗi khi gửi snapshot live-ops: {exc}")
+
+    # 2. Giải phóng kết nối DB ban đầu
+    await db.rollback()
+    await db.close()
+
+    # 3. Lắng nghe client (ping, refresh)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text("pong")
+            elif data == "refresh":
+                from app.main import app
+                from app.services.live_ops_service import get_live_ops_snapshot
+                db_dep = app.dependency_overrides.get(get_db, get_db)
+                async for refresh_db in db_dep():
+                    try:
+                        latest_snapshot = await get_live_ops_snapshot(refresh_db)
+                        await websocket.send_json({
+                            "event": "METRICS_UPDATE",
+                            "channel": channel,
+                            "data": latest_snapshot,
+                        })
+                    finally:
+                        await refresh_db.close()
+                    break
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket, channel)

@@ -394,3 +394,189 @@ async def test_driver_location_update_and_ws_broadcast(client: AsyncClient, db_s
             assert gps_msg["latitude"] == 10.774512
             assert gps_msg["longitude"] == 106.689034
 
+
+@pytest.mark.anyio
+async def test_admin_live_ops_ws_forbidden_for_non_admin(client: AsyncClient):
+    """Kiểm tra chỉ có ADMIN mới được phép kết nối /ws/admin/live-ops."""
+    # 1. Tạo Customer & Merchant
+    await client.post("/api/v1/auth/register", json={
+        "email": "customer_ops@foodhub.com",
+        "password": "password123",
+        "full_name": "Customer Ops",
+        "role": "CUSTOMER"
+    })
+    c_token = (await client.post("/api/v1/auth/login", json={
+        "email": "customer_ops@foodhub.com",
+        "password": "password123"
+    })).json()["access_token"]
+
+    await client.post("/api/v1/auth/register", json={
+        "email": "merchant_ops@foodhub.com",
+        "password": "password123",
+        "full_name": "Merchant Ops",
+        "role": "MERCHANT"
+    })
+    m_token = (await client.post("/api/v1/auth/login", json={
+        "email": "merchant_ops@foodhub.com",
+        "password": "password123"
+    })).json()["access_token"]
+
+    with TestClient(app) as tc:
+        # Không có token -> 1008
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with tc.websocket_connect("/ws/admin/live-ops"):
+                pass
+        assert exc_info.value.code == 1008
+
+        # Customer token -> 1008
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with tc.websocket_connect(f"/ws/admin/live-ops?token={c_token}"):
+                pass
+        assert exc_info.value.code == 1008
+
+        # Merchant token -> 1008
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with tc.websocket_connect(f"/ws/admin/live-ops?token={m_token}"):
+                pass
+        assert exc_info.value.code == 1008
+
+
+@pytest.mark.anyio
+async def test_admin_live_ops_ws_connect_snapshot_and_ping_pong(client: AsyncClient):
+    """Kiểm tra Admin kết nối nhận INITIAL_SNAPSHOT, ping/pong và refresh."""
+    # 1. Tạo Admin
+    await client.post("/api/v1/auth/register", json={
+        "email": "admin_liveops@foodhub.com",
+        "password": "password123",
+        "full_name": "Admin LiveOps",
+        "role": "ADMIN"
+    })
+    admin_token = (await client.post("/api/v1/auth/login", json={
+        "email": "admin_liveops@foodhub.com",
+        "password": "password123"
+    })).json()["access_token"]
+
+    with TestClient(app) as tc:
+        with tc.websocket_connect(f"/ws/admin/live-ops?token={admin_token}") as ws:
+            # 2. Nhận INITIAL_SNAPSHOT
+            init_msg = ws.receive_json()
+            assert init_msg["event"] == "INITIAL_SNAPSHOT"
+            assert init_msg["channel"] == "admin:live_ops"
+            data = init_msg["data"]
+            assert "active_orders_count" in data
+            assert "active_orders_by_status" in data
+            assert "total_delivered_revenue" in data
+            assert "online_drivers_count" in data
+            assert "busy_drivers_count" in data
+            assert "active_websocket_connections" in data
+
+            # 3. Ping / Pong
+            ws.send_text("ping")
+            assert ws.receive_text() == "pong"
+
+            # 4. Refresh snapshot
+            ws.send_text("refresh")
+            refresh_msg = ws.receive_json()
+            assert refresh_msg["event"] == "METRICS_UPDATE"
+            assert "active_orders_count" in refresh_msg["data"]
+
+
+@pytest.mark.anyio
+async def test_admin_live_ops_receives_realtime_order_broadcast(client: AsyncClient):
+    """Kiểm tra Admin Live-Ops nhận broadcast sự kiện khi có đơn hàng mới hoặc đổi trạng thái."""
+    # 1. Tạo Admin
+    await client.post("/api/v1/auth/register", json={
+        "email": "super_admin_ops@foodhub.com",
+        "password": "password123",
+        "full_name": "Super Admin Ops",
+        "role": "ADMIN"
+    })
+    admin_token = (await client.post("/api/v1/auth/login", json={
+        "email": "super_admin_ops@foodhub.com",
+        "password": "password123"
+    })).json()["access_token"]
+
+    # 2. Tạo Merchant & Nhà hàng
+    await client.post("/api/v1/auth/register", json={
+        "email": "merchant_ops_live@foodhub.com",
+        "password": "password123",
+        "full_name": "Merchant Live",
+        "role": "MERCHANT"
+    })
+    m_token = (await client.post("/api/v1/auth/login", json={
+        "email": "merchant_ops_live@foodhub.com",
+        "password": "password123"
+    })).json()["access_token"]
+    m_headers = {"Authorization": f"Bearer {m_token}"}
+
+    rest_res = await client.post("/api/v1/restaurants/", headers=m_headers, json={
+        "name": "Pho Thin Realtime LiveOps",
+        "address": "13 Lo Duc",
+        "latitude": 21.0180,
+        "longitude": 105.8560
+    })
+    rest_id = rest_res.json()["id"]
+
+    item_res = await client.post(f"/api/v1/menu/restaurants/{rest_id}/items", headers=m_headers, json={
+        "name": "Pho Tai Lan",
+        "base_price": 60000,
+        "stock_quantity": 25,
+        "is_available": True
+    })
+    item_id = item_res.json()["id"]
+
+    # 3. Tạo Customer
+    await client.post("/api/v1/auth/register", json={
+        "email": "buyer_ops_live@foodhub.com",
+        "password": "password123",
+        "full_name": "Buyer Ops Live",
+        "role": "CUSTOMER"
+    })
+    c_token = (await client.post("/api/v1/auth/login", json={
+        "email": "buyer_ops_live@foodhub.com",
+        "password": "password123"
+    })).json()["access_token"]
+    c_headers = {"Authorization": f"Bearer {c_token}"}
+
+    with TestClient(app) as tc:
+        # Admin kết nối vào /ws/admin/live-ops
+        with tc.websocket_connect(f"/ws/admin/live-ops?token={admin_token}") as ws:
+            init_msg = ws.receive_json()
+            assert init_msg["event"] == "INITIAL_SNAPSHOT"
+
+            # Customer đặt đơn mới
+            order_res = tc.post(
+                "/api/v1/orders/",
+                headers=c_headers,
+                json={
+                    "restaurant_id": rest_id,
+                    "items": [{"menu_item_id": item_id, "quantity": 1}],
+                    "delivery_lat": 21.0200,
+                    "delivery_lng": 105.8570,
+                    "delivery_address": "99 Lo Duc"
+                }
+            )
+            assert order_res.status_code == 201
+            order_id = order_res.json()["id"]
+
+            # Admin Live-Ops nhận broadcast ORDER_CREATED ngay tức thì
+            order_created_msg = ws.receive_json()
+            assert order_created_msg["event"] == "ORDER_CREATED"
+            assert order_created_msg["order_id"] == order_id
+            assert order_created_msg["restaurant_id"] == rest_id
+
+            # Merchant duyệt đơn (MERCHANT_ACCEPTED)
+            status_res = tc.patch(
+                f"/api/v1/orders/{order_id}/status",
+                headers=m_headers,
+                json={"new_status": "MERCHANT_ACCEPTED", "reason": "Nhà hàng nhận đơn"}
+            )
+            assert status_res.status_code == 200
+
+            # Admin Live-Ops nhận broadcast ORDER_STATUS_CHANGED ngay tức thì
+            status_changed_msg = ws.receive_json()
+            assert status_changed_msg["event"] == "ORDER_STATUS_CHANGED"
+            assert status_changed_msg["order_id"] == order_id
+            assert status_changed_msg["new_status"] == "MERCHANT_ACCEPTED"
+
+

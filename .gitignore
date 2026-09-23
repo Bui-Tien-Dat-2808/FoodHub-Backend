@@ -34,3 +34,9 @@ htmlcov/
 
 # Logs
 *.log
+
+# Agents
+.agent/
+
+# Ruff Cache
+.ruff_cache/

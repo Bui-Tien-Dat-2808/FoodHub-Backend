@@ -43,7 +43,15 @@ async def create_order_transaction(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nhà hàng hiện đang đóng cửa")
 
     # 2. Tính khoảng cách và phí ship (kèm Surge Pricing)
+    # 2. Tính khoảng cách và phí ship (kèm Surge Pricing & Geofencing)
     distance_km = haversine_distance(restaurant.latitude, restaurant.longitude, order_in.delivery_lat, order_in.delivery_lng)
+    max_radius = getattr(restaurant, "delivery_radius_km", 10.0) or 10.0
+    if distance_km > max_radius:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Địa chỉ giao hàng ({distance_km} km) vượt quá bán kính phục vụ của nhà hàng (tối đa {max_radius} km)",
+        )
+
     surge_multiplier, _ = await compute_dynamic_surge(db, restaurant.latitude, restaurant.longitude)
     delivery_fee = calculate_delivery_fee(distance_km, surge_multiplier=surge_multiplier)
 

@@ -12,7 +12,7 @@ from app.models.driver import DriverAssignment, DriverProfile
 from app.models.enums import DriverAssignmentStatus, OrderStatus, UserRole
 from app.models.order import Order, OrderStatusHistory
 from app.models.user import User
-from app.services.geo_service import haversine_distance
+from app.services.geo_service import get_bounding_box, haversine_distance
 from app.services.websocket_manager import ws_manager
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,11 @@ async def find_nearby_available_drivers(
     """
     Tìm danh sách tài xế đang online, không bận và nằm trong bán kính max_radius_km.
     Kết quả được sắp xếp tăng dần theo khoảng cách (km).
+    Sử dụng Bounding Box Indexing ở cấp Database để loại bỏ các điểm ngoài vùng,
+    sau đó tinh chỉnh khoảng cách Haversine chính xác.
     """
+    min_lat, max_lat, min_lng, max_lng = get_bounding_box(target_lat, target_lng, max_radius_km)
+
     stmt = (
         select(DriverProfile, User)
         .join(User, DriverProfile.user_id == User.id)
@@ -62,6 +66,8 @@ async def find_nearby_available_drivers(
             DriverProfile.is_online.is_(True),
             DriverProfile.is_busy.is_(False),
             User.is_active.is_(True),
+            DriverProfile.current_lat.between(min_lat, max_lat),
+            DriverProfile.current_lng.between(min_lng, max_lng),
         )
     )
     rows = (await db.execute(stmt)).all()

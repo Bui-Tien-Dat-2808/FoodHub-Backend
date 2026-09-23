@@ -52,11 +52,18 @@ async def estimate_delivery_fee(
     base_fee = calculate_delivery_fee(distance_km, surge_multiplier=1.0)
     final_fee = calculate_delivery_fee(distance_km, surge_multiplier=surge_multiplier)
 
+    max_delivery_radius_km = getattr(restaurant, "delivery_radius_km", None) if restaurant_id is not None else None
+    is_within_zone = True
+    if max_delivery_radius_km is not None and distance_km > max_delivery_radius_km:
+        is_within_zone = False
+
     return DeliveryFeeEstimateResponse(
         distance_km=distance_km,
         base_delivery_fee=base_fee,
         surge_multiplier=surge_multiplier,
         surge_reason=surge_reason,
         final_delivery_fee=final_fee,
+        is_within_delivery_zone=is_within_zone,
+        max_delivery_radius_km=max_delivery_radius_km,
     )
 

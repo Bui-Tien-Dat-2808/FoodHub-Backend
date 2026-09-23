@@ -58,3 +58,58 @@ class AutoAssignResponse(BaseModel):
     distance_km: float
     status: str
     message: str
+
+
+class BatchWaypointResponse(BaseModel):
+    id: int
+    sequence: int
+    waypoint_type: str
+    order_id: int
+    target_lat: float
+    target_lng: float
+    target_address: str
+    is_completed: bool
+    completed_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DeliveryBatchResponse(BaseModel):
+    id: int
+    batch_code: str
+    restaurant_id: int
+    driver_id: int | None = None
+    status: str
+    total_distance_km: float
+    created_at: datetime
+    completed_at: datetime | None = None
+    waypoints: list[BatchWaypointResponse] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BatchCandidateResponse(BaseModel):
+    restaurant_id: int
+    restaurant_name: str
+    order_ids: list[int]
+    total_batched_distance_km: float
+    independent_distance_km: float
+    saved_distance_km: float
+    efficiency_savings_pct: float
+    dropoff_distance_km: float
+
+
+class CreateBatchRequest(BaseModel):
+    restaurant_id: int
+    order_ids: list[int] = Field(..., min_length=2, max_length=3, description="Danh sách 2-3 mã đơn hàng cần ghép")
+
+
+class CompleteWaypointResponse(BaseModel):
+    batch_id: int
+    waypoint_id: int
+    waypoint_type: str
+    order_id: int
+    order_status: str
+    batch_status: str
+    is_batch_completed: bool
+    message: str

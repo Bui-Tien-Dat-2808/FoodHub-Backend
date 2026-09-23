@@ -40,11 +40,56 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
+class FakePipeline:
+    """Giả lập Redis Pipeline cho môi trường test"""
+    def __init__(self, fake_redis):
+        self.fake_redis = fake_redis
+        self.commands = []
+
+    def set(self, key, value, ex=None):
+        self.commands.append(("set", (key, value), {"ex": ex}))
+        return self
+
+    def zremrangebyscore(self, key, min_score, max_score):
+        self.commands.append(("zremrangebyscore", (key, min_score, max_score), {}))
+        return self
+
+    def zcard(self, key):
+        self.commands.append(("zcard", (key,), {}))
+        return self
+
+    def zrange(self, key, start, stop, withscores=False):
+        self.commands.append(("zrange", (key, start, stop), {"withscores": withscores}))
+        return self
+
+    def zadd(self, key, mapping):
+        self.commands.append(("zadd", (key, mapping), {}))
+        return self
+
+    def expire(self, key, seconds):
+        self.commands.append(("expire", (key, seconds), {}))
+        return self
+
+    async def execute(self):
+        results = []
+        for cmd_name, args, kwargs in self.commands:
+            fn = getattr(self.fake_redis, cmd_name)
+            res = fn(*args, **kwargs)
+            if hasattr(res, "__await__"):
+                res = await res
+            results.append(res)
+        return results
+
+
 class FakeRedis:
     """Giả lập Redis cho môi trường test"""
     def __init__(self):
         self.data = {}
         self.expiry = {}
+        self.zsets = {}
+
+    def pipeline(self):
+        return FakePipeline(self)
 
     async def get(self, key: str):
         if key in self.expiry and time.time() > self.expiry[key]:
@@ -62,6 +107,7 @@ class FakeRedis:
         for k in keys:
             self.data.pop(k, None)
             self.expiry.pop(k, None)
+            self.zsets.pop(k, None)
 
     async def keys(self, pattern: str):
         import fnmatch
@@ -82,6 +128,37 @@ class FakeRedis:
             return max(1, remaining)
         return -1
 
+    async def zremrangebyscore(self, key: str, min_score: float, max_score: float):
+        zset = self.zsets.get(key, {})
+        to_del = [m for m, score in zset.items() if min_score <= score <= max_score]
+        for m in to_del:
+            del zset[m]
+        return len(to_del)
+
+    async def zcard(self, key: str):
+        return len(self.zsets.get(key, {}))
+
+    async def zrange(self, key: str, start: int, stop: int, withscores: bool = False):
+        zset = self.zsets.get(key, {})
+        sorted_items = sorted(zset.items(), key=lambda x: x[1])
+        if stop == -1 or stop >= len(sorted_items):
+            sliced = sorted_items[start:]
+        else:
+            sliced = sorted_items[start:stop + 1]
+        if withscores:
+            return [(m, score) for m, score in sliced]
+        return [m for m, score in sliced]
+
+    async def zadd(self, key: str, mapping: dict):
+        if key not in self.zsets:
+            self.zsets[key] = {}
+        added = 0
+        for m, score in mapping.items():
+            if m not in self.zsets[key]:
+                added += 1
+            self.zsets[key][m] = float(score)
+        return added
+
     async def publish(self, channel: str, message: str):
         return 1
 
@@ -90,6 +167,13 @@ class FakeRedis:
 
     async def aclose(self):
         pass
+
+
+@pytest_asyncio.fixture(scope="function")
+async def fake_redis() -> FakeRedis:
+    """Fixture cung cấp instance FakeRedis độc lập cho từng bài test."""
+    return FakeRedis()
+
 
 
 @pytest_asyncio.fixture(scope="function")

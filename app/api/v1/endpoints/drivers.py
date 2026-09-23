@@ -16,6 +16,10 @@ from app.models.order import Order, OrderStatusHistory
 from app.models.user import User
 from app.schemas.driver import (
     AutoAssignResponse,
+    BatchCandidateResponse,
+    CompleteWaypointResponse,
+    CreateBatchRequest,
+    DeliveryBatchResponse,
     DriverAssignmentResponse,
     DriverLocationUpdate,
     DriverProfileResponse,
@@ -25,6 +29,13 @@ from app.schemas.driver import (
 from app.services.driver_matching_service import (
     auto_assign_nearest_driver,
     find_nearby_available_drivers,
+)
+from app.services.order_batching_service import (
+    create_delivery_batch,
+    driver_accept_batch,
+    find_batch_candidates,
+    get_driver_current_batch,
+    progress_batch_waypoint,
 )
 from app.services.websocket_manager import ws_manager
 
@@ -280,3 +291,113 @@ async def auto_assign_driver(
         max_radius_km=radius_km,
     )
     return result
+
+
+# ==========================================
+# ORDER BATCHING ENDPOINTS (HƯỚNG 2)
+# ==========================================
+
+@router.get("/batches/candidates", response_model=list[BatchCandidateResponse])
+async def get_batch_candidates(
+    current_user: Annotated[User, Depends(require_roles([UserRole.ADMIN, UserRole.MERCHANT, UserRole.DRIVER]))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    max_dropoff_distance_km: float = Query(3.0, ge=0.5, le=20.0, description="Khoảng cách tối đa giữa các điểm trả hàng (km)"),
+):
+    """
+    Quét tìm và gợi ý các cụm đơn hàng có thể ghép nhóm (Order Batching):
+    - Cùng một nhà hàng xuất phát.
+    - Điểm trả hàng gần nhau (mặc định <= 3 km).
+    - Tính toán tỷ lệ % quãng đường tiết kiệm được.
+    """
+    candidates = await find_batch_candidates(
+        db=db,
+        max_dropoff_distance_km=max_dropoff_distance_km,
+    )
+    return candidates
+
+
+@router.post("/batches", response_model=DeliveryBatchResponse, status_code=status.HTTP_201_CREATED)
+async def create_batch(
+    data: CreateBatchRequest,
+    current_user: Annotated[User, Depends(require_roles([UserRole.ADMIN, UserRole.MERCHANT]))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    Tạo một batch giao hàng mới từ 2-3 đơn hàng cùng quán.
+    Hệ thống tự động sắp xếp các Waypoints (Pickups tại quán -> Giao điểm gần -> Giao điểm xa).
+    Dành cho Admin hoặc Merchant sở hữu quán.
+    """
+    batch = await create_delivery_batch(
+        db=db,
+        restaurant_id=data.restaurant_id,
+        order_ids=data.order_ids,
+        actor_user=current_user,
+    )
+    return batch
+
+
+@router.post("/batches/{batch_id}/accept", response_model=DeliveryBatchResponse)
+async def accept_batch(
+    batch_id: int,
+    current_user: Annotated[User, Depends(require_roles([UserRole.DRIVER]))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[aioredis.Redis, Depends(get_redis)],
+):
+    """
+    Tài xế nhận toàn bộ batch giao hàng:
+    - Tài xế phải Online và chưa bận.
+    - Cập nhật batch sang ASSIGNED, gán tài xế.
+    - Cập nhật tất cả các đơn trong batch sang DRIVER_ASSIGNED và gán batch_id.
+    - Đánh dấu tài xế is_busy = True.
+    - Bắn thông báo WebSocket realtime cho các đơn hàng và Admin live-ops.
+    """
+    batch = await driver_accept_batch(
+        db=db,
+        redis=redis,
+        batch_id=batch_id,
+        driver_user=current_user,
+    )
+    return batch
+
+
+@router.get("/batches/current", response_model=DeliveryBatchResponse)
+async def get_current_batch(
+    current_user: Annotated[User, Depends(require_roles([UserRole.DRIVER]))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    Tài xế tra cứu batch giao hàng đang thực hiện (ASSIGNED hoặc IN_PROGRESS),
+    kèm toàn bộ danh sách waypoints tuần tự và trạng thái hoàn thành từng chặng.
+    """
+    batch = await get_driver_current_batch(db=db, driver_user=current_user)
+    if not batch:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tài xế hiện không có batch giao hàng nào đang hoạt động",
+        )
+    return batch
+
+
+@router.post("/batches/{batch_id}/waypoints/{waypoint_id}/complete", response_model=CompleteWaypointResponse)
+async def complete_waypoint(
+    batch_id: int,
+    waypoint_id: int,
+    current_user: Annotated[User, Depends(require_roles([UserRole.DRIVER]))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[aioredis.Redis, Depends(get_redis)],
+):
+    """
+    Tài xế xác nhận hoàn thành chặng dừng (Waypoint) tiếp theo theo lộ trình:
+    - Chặng PICKUP: Đơn chuyển sang PICKED_UP, assignment chuyển sang DELIVERING.
+    - Chặng DROPOFF: Đơn chuyển sang DELIVERED, tự động kích hoạt Sổ cái ghi kép (Double-Entry Ledger).
+    - Khi hoàn thành tất cả waypoints: Batch chuyển sang COMPLETED, tài xế chuyển sang rảnh rỗi (is_busy = False).
+    """
+    result = await progress_batch_waypoint(
+        db=db,
+        redis=redis,
+        batch_id=batch_id,
+        waypoint_id=waypoint_id,
+        driver_user=current_user,
+    )
+    return result
+

@@ -1,13 +1,16 @@
 from datetime import UTC, datetime
 from typing import Annotated
 
+import redis.asyncio as aioredis
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import require_roles
+from app.core.circuit_breaker import circuit_registry
 from app.core.database import get_db
+from app.core.redis import get_redis
 from app.models.audit_log import AuditLog
 from app.models.enums import OrderStatus, UserRole
 from app.models.order import Order
@@ -128,3 +131,42 @@ async def list_audit_logs(
     stmt = stmt.offset(skip).limit(limit)
     logs = (await db.execute(stmt)).scalars().all()
     return logs
+
+
+# ==========================================
+# RESILIENCE & CIRCUIT BREAKER MONITORING
+# ==========================================
+
+@router.get("/resilience/circuit-breakers")
+async def list_circuit_breakers(
+    current_user: Annotated[User, Depends(require_roles([UserRole.ADMIN]))],
+    redis: Annotated[aioredis.Redis, Depends(get_redis)],
+):
+    """Admin theo dõi trạng thái sức khỏe và độ trễ của toàn bộ Circuit Breakers."""
+    breakers = circuit_registry.get_all()
+    snapshots = []
+    for b in breakers:
+        snap = await b.get_snapshot(redis=redis)
+        snapshots.append(snap)
+    return snapshots
+
+
+@router.post("/resilience/circuit-breakers/{name}/reset")
+async def reset_circuit_breaker(
+    name: str,
+    current_user: Annotated[User, Depends(require_roles([UserRole.ADMIN]))],
+    redis: Annotated[aioredis.Redis, Depends(get_redis)],
+):
+    """Admin chủ động can thiệp đóng lại mạch (reset về CLOSED) cho dịch vụ ngoại vi."""
+    breaker = circuit_registry.get(name)
+    if not breaker:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Không tìm thấy Circuit Breaker '{name}'",
+        )
+    await breaker.reset(redis=redis)
+    return {
+        "status": "success",
+        "message": f"Circuit Breaker '{name}' đã được reset thành công về trạng thái CLOSED",
+        "snapshot": await breaker.get_snapshot(redis=redis),
+    }

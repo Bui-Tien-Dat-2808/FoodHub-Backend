@@ -41,3 +41,16 @@ class LedgerEntryType(str, Enum):
     DEBIT = "DEBIT"
     CREDIT = "CREDIT"
 
+
+class BatchStatus(str, Enum):
+    PENDING = "PENDING"          # Batch mới tạo, chờ tài xế nhận
+    ASSIGNED = "ASSIGNED"        # Tài xế đã nhận batch
+    IN_PROGRESS = "IN_PROGRESS"  # Tài xế đang thực hiện lộ trình giao các chặng
+    COMPLETED = "COMPLETED"      # Toàn bộ đơn trong batch đã giao thành công
+    CANCELLED = "CANCELLED"      # Batch bị huỷ
+
+
+class WaypointType(str, Enum):
+    PICKUP = "PICKUP"    # Điểm lấy hàng tại nhà hàng
+    DROPOFF = "DROPOFF"  # Điểm trả hàng cho khách hàng
+

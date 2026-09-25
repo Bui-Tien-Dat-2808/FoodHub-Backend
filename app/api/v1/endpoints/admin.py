@@ -18,8 +18,12 @@ from app.models.user import User
 from app.schemas.admin import AuditLogResponse, RefundRequest, RefundResponse
 from app.schemas.ledger import LedgerEntryResponse
 from app.schemas.order import OrderResponse
+from app.schemas.outbox import OutboxEventResponse, OutboxRelayResponse
+from app.schemas.saga import SagaInstanceResponse
 from app.services.audit_service import log_audit
 from app.services.ledger_service import get_order_ledger_entries, record_order_refund
+from app.services.outbox_service import list_outbox_events, relay_outbox_events
+from app.services.saga_service import get_saga_detail
 
 router = APIRouter()
 
@@ -170,3 +174,48 @@ async def reset_circuit_breaker(
         "message": f"Circuit Breaker '{name}' đã được reset thành công về trạng thái CLOSED",
         "snapshot": await breaker.get_snapshot(redis=redis),
     }
+
+
+# ==========================================
+# SAGA ORCHESTRATION & TRANSACTIONAL OUTBOX (HƯỚNG 4)
+# ==========================================
+
+@router.get("/sagas/{saga_id}", response_model=SagaInstanceResponse)
+async def get_saga_instance(
+    saga_id: str,
+    current_user: Annotated[User, Depends(require_roles([UserRole.ADMIN]))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Admin tra cứu chi tiết tiến trình, trạng thái và nhật ký bù trừ của một Saga."""
+    saga = await get_saga_detail(db=db, saga_id=saga_id)
+    if not saga:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Không tìm thấy SagaInstance với mã '{saga_id}'",
+        )
+    return saga
+
+
+@router.post("/outbox/relay", response_model=OutboxRelayResponse)
+async def trigger_outbox_relay(
+    current_user: Annotated[User, Depends(require_roles([UserRole.ADMIN]))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[aioredis.Redis, Depends(get_redis)],
+    batch_size: int = Query(50, ge=1, le=200, description="Số lượng sự kiện xử lý tối đa"),
+):
+    """Kích hoạt thủ công hoặc định kỳ Relay Worker quét và phát tán các Outbox Events đang PENDING."""
+    result = await relay_outbox_events(db=db, redis=redis, batch_size=batch_size)
+    return result
+
+
+@router.get("/outbox/events", response_model=list[OutboxEventResponse])
+async def get_outbox_events(
+    current_user: Annotated[User, Depends(require_roles([UserRole.ADMIN]))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    status_filter: str | None = Query(None, alias="status", description="Lọc theo trạng thái: PENDING, PROCESSED, FAILED"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+):
+    """Admin tra cứu danh sách các sự kiện trong bảng outbox_events."""
+    events = await list_outbox_events(db=db, status_filter=status_filter, limit=limit, skip=skip)
+    return events

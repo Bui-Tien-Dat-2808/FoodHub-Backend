@@ -1,4 +1,4 @@
-﻿import json
+import json
 from typing import Annotated
 
 import redis.asyncio as aioredis

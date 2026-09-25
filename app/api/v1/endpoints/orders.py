@@ -25,6 +25,7 @@ from app.schemas.order import (
     OrderResponse,
     OrderStatusUpdate,
 )
+from app.schemas.saga import CheckoutSagaRequest, SagaExecutionResult
 from app.services.ledger_service import record_order_settlement
 from app.services.order_service import (
     create_order_transaction,
@@ -33,6 +34,7 @@ from app.services.order_service import (
 )
 from app.services.order_state_machine import validate_state_transition
 from app.services.report_service import invalidate_revenue_report_cache
+from app.services.saga_service import run_order_checkout_saga
 from app.services.websocket_manager import ws_manager
 from app.tasks.notification_tasks import send_order_status_notification
 from app.tasks.order_tasks import auto_cancel_unpaid_order
@@ -414,3 +416,32 @@ async def cancel_order(
 
     await db.refresh(order, attribute_names=["items"])
     return order
+
+
+# ==========================================
+# SAGA ORCHESTRATION CHECKOUT (HƯỚNG 4)
+# ==========================================
+
+@router.post("/{order_id}/checkout-saga", response_model=SagaExecutionResult)
+async def checkout_order_saga(
+    order_id: int,
+    data: CheckoutSagaRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[aioredis.Redis, Depends(get_redis)],
+):
+    """
+    Thực thi chuỗi giao dịch phân tán toàn trình (Saga Orchestration) cho Checkout:
+    1. Giữ tồn kho món ăn (ReserveInventory)
+    2. Áp dụng Voucher (ApplyVoucher)
+    3. Thanh toán an toàn qua Circuit Breaker (ProcessPayment)
+    4. Xác nhận đơn & Lưu Transactional Outbox (ConfirmOrder)
+    Nếu bất kỳ bước nào thất bại -> Tự động kích hoạt các giao dịch bù trừ (Compensations).
+    """
+    result = await run_order_checkout_saga(
+        db=db,
+        redis=redis,
+        order_id=order_id,
+        simulate_payment_failure=data.simulate_payment_failure,
+    )
+    return result

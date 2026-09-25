@@ -14,6 +14,7 @@ from app.models.promotion import Voucher, VoucherUsage
 from app.models.restaurant import MenuItem, Restaurant
 from app.models.user import User
 from app.schemas.order import OrderCreate
+from app.services.outbox_service import record_outbox_event
 from app.services.pricing_service import calculate_delivery_fee, compute_dynamic_surge
 
 
@@ -215,6 +216,21 @@ async def create_order_transaction(
         reason = "Khách hàng đặt đơn thành công"
     )
     db.add(history)
+
+    # 7. Ghi nhận Transactional Outbox Event (nguyên tử cùng commit đơn hàng)
+    record_outbox_event(
+        db=db,
+        aggregate_type="ORDER",
+        aggregate_id=order.id,
+        event_type="ORDER_CREATED",
+        payload={
+            "order_id": order.id,
+            "order_code": order.order_code,
+            "restaurant_id": order.restaurant_id,
+            "customer_id": customer_id,
+            "total_amount": total_amount,
+        },
+    )
 
     await db.commit()
     ORDERS_CREATED_TOTAL.inc()
